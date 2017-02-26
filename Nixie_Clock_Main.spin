@@ -116,15 +116,35 @@ PUB main| i,c
     ' get and display the TIME
     ds1307object.gettime(i2cSCL,ds1307addr)
     hrs := ds1307object.getHours
-    DspBuff[5] := numberToBCD(hrs) >> 4
-    DspBuff[4] := numberToBCD(hrs) & $f
+    if hrs < 12
+      if hrs > 9
+        DspBuff[5] := numberToBCD(hrs) >> 4 
+        DspBuff[4] := numberToBCD(hrs) & $f
+      else
+        if hrs => 1
+          DspBuff[5] := numberToBCD(-1) >> 4 & $7f
+          DspBuff[4] := numberToBCD(hrs) & $f
+        else
+          DspBuff[5] := numberToBCD(hrs + 12) >> 4
+          DspBuff[4] := numberToBCD(hrs + 12) & $f
+    else
+      if hrs > 21
+        DspBuff[5] := numberToBCD(hrs - 12) >> 4 | $80
+        DspBuff[4] := numberToBCD(hrs - 12) & $f
+      else
+        if hrs < 13
+          DspBuff[5] := numberToBCD(hrs) >> 4 | $80
+          DspBuff[4] := numberToBCD(hrs) & $f
+        else
+          DspBuff[5] := numberToBCD(-1) >> 4
+          DspBuff[4] := numberToBCD(hrs - 12) & $f    
     
     mns := ds1307object.getMinutes
-    DspBuff[3] := numberToBCD(mns) >> 4
+    DspBuff[3] := numberToBCD(mns) >> 4 | $80
     DspBuff[2] := numberToBCD(mns) & $f
 
     secs := ds1307object.getSeconds
-    DspBuff[1] := numberToBCD(secs) >> 4
+    DspBuff[1] := numberToBCD(secs) >> 4 | $80
     DspBuff[0] := numberToBCD(secs) & $f
      
      ' get and display the DATE
