@@ -1,9 +1,26 @@
-{{ Nixie_Clock_Main.spin}}
+{{ Nixie_Clock_Main_008.spin
+
+Authors:
+Terry Willis
+Paul Willis
+
+Date:
+December, 29, 2012
+
+Notes:
+To program plug in prop. plug, run Parallax Serial
+Terminal, use COM port 5, Baud rate 115200, then
+hit F11 (compile/load EEPROM) in the prop tool
+}}
 
 CON
   _clkmode = xtal1 + pll16x 
   _xinfreq = 5_000_000
-
+  nibble = 4
+  lsnibble = $f
+  dispdp = $80
+  lonedp = $8f
+  
  
 OBJ
   i2cObject     : "basic_i2c_driver"
@@ -79,7 +96,7 @@ PUB main| i,c
   i2cObject.Initialize(i2cSCL)
 
   Debug.start(31, 30, 0, 115200)
-  Debug.Str(String("Paul's Nixie Clock V007"))
+  Debug.Str(String("Paul's Nixie Clock V008"))
   crlf
 
   bytefill(@DspBuff1, $0, 6)
@@ -117,36 +134,61 @@ PUB main| i,c
     if secs <> lastsec
        
       hrs := ds1307object.getHours
-      if hrs < 12
-        if hrs > 9
-          DspBuff[5] := numberToBCD(hrs) >> 4
-          DspBuff[4] := numberToBCD(hrs) & $f
+      'hrs := secs // 24                 'AM/PM DEBUG
+      {{'ALTERNATE AM/PM CODE, BROKEN
+      if (hrs == 0)                                     '12am
+          DspBuff[5] := numberToBCD(12) >> nibble
+          DspBuff[4] := numberToBCD(12) & lsnibble
+      if (hrs > 0 & hrs < 10)                           '1am to 9am
+          DspBuff[5] := lsnibble
+          DspBuff[4] := numberToBCD(hrs) & lsnibble    
+      if (hrs == 10 | hrs == 11)                        '10am and 11am
+          DspBuff[5] := numberToBCD(hrs) >> nibble
+          DspBuff[4] := numberToBCD(hrs) & lsnibble          
+      if (hrs == 12)                                    '12pm
+          DspBuff[5] := (numberToBCD(hrs) >> nibble) | dispdp
+          DspBuff[4] := numberToBCD(hrs) & lsnibble
+      if (hrs > 12 & hrs < 22)                          '1pm to 9pm
+          DspBuff[5] := lonedp
+          DspBuff[4] := numberToBCD(hrs - 12) & lsnibble         
+      if (hrs == 22 | hrs == 23)                        '10pm and 11pm
+          DspBuff[5] := (numberToBCD(hrs - 12) >> nibble) | dispdp
+          DspBuff[4] := numberToBCD(hrs - 12) & lsnibble}}
+        
+      if hrs < 12   
+        if hrs > 9     '10am and 11am
+          DspBuff[5] := numberToBCD(hrs) >> nibble
+          DspBuff[4] := numberToBCD(hrs) & lsnibble
         else
-          if hrs => 1
-            DspBuff[5] := $f
-            DspBuff[4] := numberToBCD(hrs) & $f
-          else
-            DspBuff[5] := numberToBCD(hrs + 12) >> 4
-            DspBuff[4] := numberToBCD(hrs + 12) & $f
+          if hrs => 1  '1am to 9am
+            DspBuff[5] := lsnibble
+            DspBuff[4] := numberToBCD(hrs) & lsnibble
+          else         '12am
+            DspBuff[5] := numberToBCD(12) >> nibble
+            DspBuff[4] := numberToBCD(12) & lsnibble
       else
-        if hrs > 21
-          DspBuff[5] := $8f
-          DspBuff[4] := numberToBCD(hrs - 12)
+        if hrs > 21    '10pm and 11pm
+          DspBuff[5] := (numberToBCD(hrs - 12) >> nibble) | dispdp
+          DspBuff[4] := numberToBCD(hrs - 12) & lsnibble
         else
-          if hrs < 13
-            DspBuff[5] := numberToBCD(hrs) >> 4 | $80
-            DspBuff[4] := numberToBCD(hrs)
-          else
-            DspBuff[5] := $8f
-            DspBuff[4] := numberToBCD(hrs - 12)    
+          if hrs < 13  '12pm
+            DspBuff[5] := (numberToBCD(12) >> nibble) | dispdp
+            DspBuff[4] := numberToBCD(12) & lsnibble
+          else         '1pm to 9pm
+            DspBuff[5] := lonedp
+            DspBuff[4] := numberToBCD(hrs - 12) & lsnibble
        
       mns := ds1307object.getMinutes
-      DspBuff[3] := numberToBCD(mns) >> 4 | $80
-      DspBuff[2] := numberToBCD(mns) & $f
+      DspBuff[3] := (numberToBCD(mns) >> nibble) | dispdp
+      DspBuff[2] := numberToBCD(mns) & lsnibble
        
-      ' secs := ds1307object.getSeconds
-      DspBuff[1] := numberToBCD(secs) >> 4 | $80
-      DspBuff[0] := numberToBCD(secs) & $f
+      ' secs := ds1307object.getSeconds  
+      DspBuff[1] := (numberToBCD(secs) >> nibble) | dispdp
+      DspBuff[0] := numberToBCD(secs) & lsnibble
+
+      {{'DISP DEBUG
+      repeat i from 0 to 5
+        DspBuff[i] := (secs // 10) | dispdp}}
        
        ' get and display the DATE
       ds1307object.getdate(i2cSCL,ds1307addr)
@@ -173,7 +215,7 @@ PUB main| i,c
 
 PRI numberToBCD(number) ' 4 Stack Longs 
 
-  return ( ( ( (number / 10) << 4) + (number // 10) )  & $ff )
+  return ( ( ( (number / 10) << nibble) + (number // 10) )  & $ff )
                                          
     
 PRI setdate
