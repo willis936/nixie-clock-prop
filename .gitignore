@@ -1,3 +1,23 @@
+# compiled code
+*.binary
+
+# documentation
+*.png
+*.jpg
+*.gif
+*.pdf
+*.zip
+
+# reference directories
+/archives
+/buttons
+/Clock
+/IN-12
+/Power Supply
+/RTC
+/timezone
+/WWVB
+
 # Windows image file caches
 Thumbs.db
 ehthumbs.db
