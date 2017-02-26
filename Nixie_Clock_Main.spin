@@ -79,7 +79,7 @@ PUB main| i,c
   i2cObject.Initialize(i2cSCL)
 
   Debug.start(31, 30, 0, 115200)
-  Debug.Str(String("Paul's Nixie Clock V006"))
+  Debug.Str(String("Paul's Nixie Clock V007"))
   crlf
 
   bytefill(@DspBuff1, $0, 6)
@@ -130,15 +130,15 @@ PUB main| i,c
             DspBuff[4] := numberToBCD(hrs + 12) & $f
       else
         if hrs > 21
-          DspBuff[5] := numberToBCD(hrs - 12) >> 4 | $80
-          DspBuff[4] := numberToBCD(hrs - 12) & $f
+          DspBuff[5] := $8f
+          DspBuff[4] := numberToBCD(hrs - 12)
         else
           if hrs < 13
             DspBuff[5] := numberToBCD(hrs) >> 4 | $80
-            DspBuff[4] := numberToBCD(hrs) & $f
+            DspBuff[4] := numberToBCD(hrs)
           else
-            DspBuff[5] := $f
-            DspBuff[4] := numberToBCD(hrs - 12) & $f    
+            DspBuff[5] := $8f
+            DspBuff[4] := numberToBCD(hrs - 12)    
        
       mns := ds1307object.getMinutes
       DspBuff[3] := numberToBCD(mns) >> 4 | $80
