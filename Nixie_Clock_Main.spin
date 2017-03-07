@@ -1,11 +1,11 @@
-{{ Nixie_Clock_Main_009.spin
+{{ Nixie_Clock_Main.spin
 
 Authors:
 Terry Willis
 Paul  Willis
 
 Date:
-August 20, 2016
+March 7, 2017
 
 Notes:
 To program plug in prop. plug, run Parallax Serial
@@ -137,7 +137,7 @@ PUB main| i,c
   
   term.start(31, 30, 0, 115200)
   clearterm
-  term.Str(String("Paul's Nixie Clock V009"))
+  term.Str(String("Paul's Nixie Clock"))
   term.tx(CLREOL)
   term.tx(LF)
   term.tx(CLREOL)
@@ -191,7 +191,7 @@ PUB main| i,c
       'mns  := 59
       'secs := 50
       ' Get the time, assume you just read the data for the next second
-      ' Assuming data is from two seconds ago take care of time rollover
+      ' Assuming data is from one second ago, take care of time rollover
       repeat i from 1 to 1
         secs += 1
         if secs > 59
@@ -202,18 +202,18 @@ PUB main| i,c
           mns  := 0
         if hrs > 23
           hrs  := 0
-        elseif i == 2
+        elseif i == 1
           
           ' Only update the date when not rolling over a day
-          RTCEngine.setDate(dayofwk)
-          RTCEngine.setDay(days)
-          RTCEngine.setMonth(mons)
           RTCEngine.setYear((century*100)+yrs)
+          RTCEngine.setMonth(mons)
+          RTCEngine.setDay(days)
+          RTCEngine.setDate(dayofwk)
       
       ' update the RTC when there is a GPS fix
-      RTCEngine.setSeconds(secs)
-      RTCEngine.setMinutes(mns)
       RTCEngine.setHours(hrs)
+      RTCEngine.setMinutes(mns)
+      RTCEngine.setSeconds(secs)
 	  
 	  ' Synchronize the main loop to the GPS
       phsa := 0
@@ -334,7 +334,7 @@ PUB main| i,c
       term.tx(CLREOL)
       printdate
       
-      waitcnt(cnt + clkfreq*9/10) ' Sleep for 900 ms before resuming main loop
+    waitcnt(cnt + clkfreq*9/10) ' Sleep for 900 ms before resuming main loop
 
 PRI numberToBCD(number) ' 4 Stack Longs 
 
