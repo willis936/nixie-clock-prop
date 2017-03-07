@@ -177,13 +177,6 @@ PUB main| i,c
     ' Check if it is a new second
     gpsfix := gps.n_gpsfix
     if gpsfix > 0' and (hrs > 11 and secs > 10)
-      ' Synchronize the main loop to the GPS
-      phsa := 0
-      repeat until ina[GPS_PPS]   ' Sync up to GPS PPS
-        ' If GPS is lost the PPS will never come
-        if phsa > 8191
-          quit
-      phsa := 0
       ' Get the date
       yrs  := gps.n_year
       mons := gps.n_month
@@ -221,8 +214,15 @@ PUB main| i,c
       RTCEngine.setSeconds(secs)
       RTCEngine.setMinutes(mns)
       RTCEngine.setHours(hrs)
+	  
+	  ' Synchronize the main loop to the GPS
+      phsa := 0
+      repeat until ina[GPS_PPS]   ' Sync up to GPS PPS
+        ' If GPS is lost the PPS will never come
+        if phsa > 8191
+          quit
+      phsa := 0
     else
-      waitcnt(cnt + clkfreq*3/4)  ' Sleep for 750 ms before resuming poling
       ' get the date
       yrs     := RTCEngine.getYear
       mons    := RTCEngine.getMonth
@@ -333,7 +333,8 @@ PUB main| i,c
       term.tx(LF)
       term.tx(CLREOL)
       printdate
-
+      
+      waitcnt(cnt + clkfreq*9/10) ' Sleep for 900 ms before resuming main loop
 
 PRI numberToBCD(number) ' 4 Stack Longs 
 
