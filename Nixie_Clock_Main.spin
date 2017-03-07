@@ -177,18 +177,18 @@ PUB main| i,c
     ' Check if it is a new second
     gpsfix := gps.n_gpsfix
     if gpsfix > 0' and (hrs > 11 and secs > 10)
-      repeat until not ina[GPS_PPS]  ' Sync up to GPS PPS
+      ' Synchronize the main loop to the GPS
+      phsa := 0
+      repeat until ina[GPS_PPS]   ' Sync up to GPS PPS
         ' If GPS is lost the PPS will never come
         if phsa > 8191
           quit
-      waitcnt(cnt + clkfreq/2)       ' Sleep for 500 ms before grabbing the date
       phsa := 0
       ' Get the date
       yrs  := gps.n_year
       mons := gps.n_month
       days := gps.n_day
       dayofwk := weekdaycalc.DOTW((century*100)+yrs, mons, days)+1
-      waitcnt(cnt + clkfreq/4)        ' Sleep for 250 ms before grabbing the time
       ' Get the time
       localTimeGPS := ASCII.decimalToInteger(gps.s_local_time)
       hrs  := (localTimeGPS / 10000) // 100
@@ -221,14 +221,8 @@ PUB main| i,c
       RTCEngine.setSeconds(secs)
       RTCEngine.setMinutes(mns)
       RTCEngine.setHours(hrs)
-      ' Synchronize the main loop to the GPS
-      repeat until ina[GPS_PPS]
-        ' If GPS is lost the PPS will never come
-        if phsa > 8191
-          quit
-      phsa := 0
     else
-      waitcnt(cnt + clkfreq/2)    ' Sleep for 500 ms before resuming poling
+      waitcnt(cnt + clkfreq*3/4)  ' Sleep for 750 ms before resuming poling
       ' get the date
       yrs     := RTCEngine.getYear
       mons    := RTCEngine.getMonth
@@ -238,7 +232,17 @@ PUB main| i,c
       hrs  := RTCEngine.getHours
       mns  := RTCEngine.getMinutes
       secs := RTCEngine.getSeconds
-      repeat until phsa > 8191   ' Wait for square wave counter to reach 8192
+      repeat i from 1 to 1
+        secs += 1
+        if secs > 59
+          mns  += 1
+          secs := 0
+        if mns > 59
+          hrs  += 1
+          mns  := 0
+        if hrs > 23
+          hrs  := 0
+      repeat until phsa > 8191    ' Wait for square wave counter to reach 8192
       phsa := 0
     ' check if it's a new century!
     if yrs == 0
