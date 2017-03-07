@@ -199,7 +199,7 @@ PUB main| i,c
       'secs := 50
       ' Get the time, assume you just read the data for the next second
       ' Assuming data is from two seconds ago take care of time rollover
-      repeat i from 1 to 2
+      repeat i from 1 to 1
         secs += 1
         if secs > 59
           mns  += 1
