@@ -177,7 +177,10 @@ PUB main| i,c
     ' Check if it is a new second
     gpsfix := gps.n_gpsfix
     if gpsfix > 0' and (hrs > 11 and secs > 10)
-      repeat until not ina[GPS_PPS]   ' Sync up to GPS PPS
+      repeat until not ina[GPS_PPS]  ' Sync up to GPS PPS
+        ' If GPS is lost the PPS will never come
+        if phsa > 8191
+          quit
       waitcnt(cnt + clkfreq/2)       ' Sleep for 500 ms before grabbing the date
       phsa := 0
       ' Get the date
