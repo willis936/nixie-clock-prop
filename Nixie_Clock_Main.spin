@@ -160,7 +160,9 @@ PUB main| i,c
   term.tx(LF)
   term.tx(CLREOL)
   
+  ' main loop
   repeat
+    ' check if console interface should be displayed
     c := uppercase(term.rxcheck)
     if c == "D"
       term.GetDec   ' Ignore the return used to enter "D"
@@ -176,14 +178,14 @@ PUB main| i,c
     gpsfix := gps.n_gpsfix
     if gpsfix > 0' and (hrs > 11 and secs > 10)
       repeat until not ina[GPS_PPS]   ' Sync up to GPS PPS
-      waitcnt(cnt + clkfreq/10)       ' Sleep for 100 ms before grabbing the date
+      waitcnt(cnt + clkfreq/2)       ' Sleep for 500 ms before grabbing the date
       phsa := 0
       ' Get the date
       yrs  := gps.n_year
       mons := gps.n_month
       days := gps.n_day
       dayofwk := weekdaycalc.DOTW((century*100)+yrs, mons, days)+1
-      waitcnt(cnt + clkfreq/10)       ' Sleep for 100 ms before grabbing the time
+      waitcnt(cnt + clkfreq/4)        ' Sleep for 250 ms before grabbing the time
       ' Get the time
       localTimeGPS := ASCII.decimalToInteger(gps.s_local_time)
       hrs  := (localTimeGPS / 10000) // 100
