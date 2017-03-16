@@ -219,7 +219,8 @@ PUB main| i,c
       phsa := 0
       repeat until ina[GPS_PPS]   ' Sync up to GPS PPS
         ' If GPS is lost the PPS will never come
-        if phsa > 8191
+        ' Must wait more than one RTC second in case RTC is fast
+        if phsa > 9000
           quit
       phsa := 0
     else
