@@ -192,7 +192,7 @@ PUB main| i,c
       'secs := 50
       ' Get the time, assume you just read the data for the next second
       ' Assuming data is from one second ago, take care of time rollover
-      repeat i from 1 to 1
+      repeat i from 1 to 2
         secs += 1
         if secs > 59
           mns  += 1
@@ -343,6 +343,11 @@ PUB main| i,c
       term.tx(LF)
       term.tx(CLREOL)
       printdate
+    
+    repeat until phsa > 2047 ' Wait for 500 ms before pulling the time
+      ' Sleep in between edges
+      waitpne(|< RTC_SQW, |< RTC_SQW, 0)
+      waitpne(|< 0,       |< RTC_SQW, 0)
 
 PRI numberToBCD(number) ' 4 Stack Longs 
 
