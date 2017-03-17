@@ -214,15 +214,19 @@ PUB main| i,c
       RTCEngine.setHours(hrs)
       RTCEngine.setMinutes(mns)
       RTCEngine.setSeconds(secs)
-	  
-	  ' Synchronize the main loop to the GPS
-      phsa := 0
+      
+	    ' Synchronize the main loop to the GPS
       repeat until ina[GPS_PPS]   ' Sync up to GPS PPS
+        ' Sleep in between edges or as soon as PPS goes high
         ' If GPS is lost the PPS will never come
         ' Must wait more than one RTC second in case RTC is fast
-        if phsa > 9000
+        if phsa > 9215
           quit
-      phsa := 0
+      ' account for the missing 1/8 of a second
+      if phsa > 9215
+        phsa := 1024
+      else
+        phsa := 0
     else
       ' get the date
       yrs     := RTCEngine.getYear
@@ -243,7 +247,8 @@ PUB main| i,c
           mns  := 0
         if hrs > 23
           hrs  := 0
-      repeat until phsa > 8191    ' Wait for square wave counter to reach 8192
+      repeat until phsa > 8191 ' Wait for square wave counter to reach 8192
+        ' Sleep in between edges
       phsa := 0
     ' check if it's a new century!
     if yrs == 0
@@ -271,7 +276,7 @@ PUB main| i,c
     if not ina[DSTPin]
       DST := isDST
       if DST
-        ' Have to wait an hour for the RTC calendar to update...
+        ' Calendar will be off by a day from 11pm to midnight
         hrs := (hrs+1)//24
     
     ' Write hours to display buffer
@@ -334,8 +339,6 @@ PUB main| i,c
       term.tx(LF)
       term.tx(CLREOL)
       printdate
-      
-    waitcnt(cnt + clkfreq*9/10) ' Sleep for 900 ms before resuming main loop
 
 PRI numberToBCD(number) ' 4 Stack Longs 
 
