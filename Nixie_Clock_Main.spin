@@ -218,6 +218,8 @@ PUB main| i,c
 	    ' Synchronize the main loop to the GPS
       repeat until ina[GPS_PPS]   ' Sync up to GPS PPS
         ' Sleep in between edges or as soon as PPS goes high
+        waitpne(|< RTC_SQW, (|< RTC_SQW) & (|< GPS_PPS), 0)
+        waitpne(|< 0,       (|< RTC_SQW) & (|< GPS_PPS), 0)
         ' If GPS is lost the PPS will never come
         ' Must wait more than one RTC second in case RTC is fast
         if phsa > 9215
@@ -249,6 +251,8 @@ PUB main| i,c
           hrs  := 0
       repeat until phsa > 8191 ' Wait for square wave counter to reach 8192
         ' Sleep in between edges
+        waitpne(|< RTC_SQW, |< RTC_SQW, 0)
+        waitpne(|< 0,       |< RTC_SQW, 0)
       phsa := 0
     ' check if it's a new century!
     if yrs == 0
