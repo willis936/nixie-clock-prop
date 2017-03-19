@@ -176,7 +176,10 @@ PUB main| i,c
     
     ' Check if it is a new second
     gpsfix := gps.n_gpsfix
-    if gpsfix > 0' and (hrs > 11 and secs > 10)
+    {{ Debug swap time source
+    if secs < 10
+      gpsfix := 0}}
+    if gpsfix > 0
       ' Get the date
       yrs  := gps.n_year
       mons := gps.n_month
@@ -187,9 +190,6 @@ PUB main| i,c
       hrs  := (localTimeGPS / 10000) // 100
       mns  := (localTimeGPS / 100)   // 100
       secs := (localTimeGPS          // 100)
-      'hrs  := 10
-      'mns  := 59
-      'secs := 50
       ' Get the time, assume you just read the data for the next second
       ' Assuming data is from one second ago, take care of time rollover
       repeat i from 1 to 2
@@ -226,6 +226,7 @@ PUB main| i,c
           quit
       ' account for the missing 1/8 of a second
       if phsa > 9215
+        gpsfix := 0
         phsa := 1024
       else
         phsa := 0
