@@ -222,7 +222,6 @@ PUB main| i,c
       ' update the RTC when there is a GPS fix
       RTCEngine.setHours(hrs)
       RTCEngine.setMinutes(mns)
-      RTCEngine.setSeconds(secs)
       
 	    ' Synchronize the main loop to the GPS
       repeat until ina[GPS_PPS]   ' Sync up to GPS PPS
@@ -238,6 +237,8 @@ PUB main| i,c
         gpsfix := 0
         phsa := 1024
       else
+        ' Setting the seconds resets the time
+        RTCEngine.setSeconds(secs)
         phsa := 0
     else
       ' get the date
