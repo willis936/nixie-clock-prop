@@ -49,7 +49,7 @@ VAR
   byte hrs, mns, secs
   byte days, mons, yrs, dayofwk
   byte SemID
-  byte DST, century, gpsfix
+  byte DST, century, gpsfix, locked
   
   byte   DspBuff[6]             ' 6 byte display buffer
   byte   DspBuff1[6]            ' 6 byte display buffer1
@@ -113,6 +113,8 @@ PUB main| i,c
   UTCOffset   := -5   ' Hard code the UTC offset for now...
   UTCTemp     := 0    ' Default new UTC value
   century     := 20   ' Assume the clock was booted in 20XX
+  gpsfix      := 0    ' Initialize GPS return value
+  locked      := 0    ' Initialize previous GPS lock state
   SemID       := locknew
   
   dira[HVPS_ENB]~~        ' Enable high voltage
@@ -179,6 +181,13 @@ PUB main| i,c
     {{ Debug swap time source
     if secs < 10
       gpsfix := 0}}
+    
+    ' Hop off GPS once an hour to resync display buffer
+    if gpsfix > 0
+      if mins < 1
+        if secs < 10
+          gpsfix := 0
+    
     if gpsfix > 0
       ' Get the date
       yrs  := gps.n_year
@@ -349,6 +358,12 @@ PUB main| i,c
       ' Sleep in between edges
       waitpne(|< RTC_SQW, |< RTC_SQW, 0)
       waitpne(|< 0,       |< RTC_SQW, 0)
+    
+    ' Update previous GPS lock state after delay so display driver can catch it
+    if gpsfix > 0
+      locked := 1
+    else
+      locked := 0
 
 PRI numberToBCD(number) ' 4 Stack Longs 
 
@@ -533,10 +548,18 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
         refreshRate := 6
       else
         ' refresh rate controls max accuracy.
+        ' If we loop 720 times a second, 6 digits: 720/6 = 120 Hz
         '  720: (120 Hz   15% duty cycle, 8.3 ms accuracy)
         ' 1440: (240 Hz 11.2% duty cycle, 4.1 ms accuracy)
         ' 2880: (480 Hz  6.3% duty cycle, 2.1 ms accuracy)
         refreshRate := 2880
+        ' sync up second to PPS when GPS is first acquired
+        if gpsfix > 0 & locked < 1
+          repeat until ina[GPS_PPS]   ' Sync up to GPS PPS
+            ' Sleep in between edges or as soon as PPS goes high
+            waitpne(|< RTC_SQW, (|< RTC_SQW) & (|< GPS_PPS), 0)
+            waitpne(|< 0,       (|< RTC_SQW) & (|< GPS_PPS), 0)
+        
       repeat digPos from 0 to 5                  ' Get next digit position
         digit  := byte[@DspBuff1][digPos]        ' Get char and validate
         segwrd := word[@NumTab][digit&$f] & $ffff
