@@ -46,6 +46,7 @@ VAR
   long runningCogID
   long stack[50]
   long UTCOffset, UTCTemp, localTimeGPS
+  long RTCfreq
   byte hrs, mns, secs
   byte days, mons, yrs, dayofwk
   byte SemID
@@ -178,8 +179,9 @@ PUB main| i,c
     ' Check if it is a new second
     gpsfix := gps.n_gpsfix
     {{ Debug swap time source
-    if secs < 10
-      gpsfix := 0}}
+    if secs // 10 < 5
+      gpsfix := 0
+    }}
     
     if gpsfix > 0
       ' Get the date
@@ -192,6 +194,7 @@ PUB main| i,c
       hrs  := (localTimeGPS / 10000) // 100
       mns  := (localTimeGPS / 100)   // 100
       secs := (localTimeGPS          // 100)
+      
       ' Get the time, assume you just read the data for the next second
       ' Assuming data is from one second ago, take care of time rollover
       repeat i from 1 to 2
@@ -212,6 +215,13 @@ PUB main| i,c
           RTCEngine.setDay(days)
           RTCEngine.setDate(dayofwk)
       
+      ' update DST
+      if not ina[DSTPin]
+        DST := isDST
+        if DST
+          ' Calendar will be off by a day from 11pm to midnight
+          hrs := (hrs+1)//24
+      
       ' update the RTC when there is a GPS fix
       RTCEngine.setHours(hrs)
       RTCEngine.setMinutes(mns)
@@ -231,8 +241,8 @@ PUB main| i,c
         phsa := (RTCfreq*1/8)
       else
         ' Setting the seconds resets the time
-        RTCEngine.setSeconds(secs)
         phsa := 0
+        RTCEngine.setSeconds(secs)
     else
       ' get the date
       yrs     := RTCEngine.getYear
@@ -253,6 +263,14 @@ PUB main| i,c
           mns  := 0
         if hrs > 23
           hrs  := 0
+      
+      ' update DST
+      if not ina[DSTPin]
+        DST := isDST
+        if DST
+          ' Calendar will be off by a day from 11pm to midnight
+          hrs := (hrs+1)//24
+      
       repeat until phsa > RTCfreq-1 ' Wait for square wave counter
         ' Sleep in between edges
         waitpne(|< RTC_SQW, |< RTC_SQW, 0)
@@ -279,13 +297,6 @@ PUB main| i,c
       gps.stop
       gps.startx(GPS_RX, UTCOffset, 9600, 1250)
       RTCEngine.setHours(hrs)
-    
-    ' update DST
-    if not ina[DSTPin]
-      DST := isDST
-      if DST
-        ' Calendar will be off by a day from 11pm to midnight
-        hrs := (hrs+1)//24
     
     ' Write hours to display buffer
     case hrs  ' Display AM/PM
