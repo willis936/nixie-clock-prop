@@ -50,7 +50,7 @@ VAR
   byte hrs, mns, secs
   byte days, mons, yrs, dayofwk
   byte SemID
-  byte DST, century, gpsfix
+  byte DST, century, gpsfix, phsatmp
   
   byte   DspBuff[6]             ' 6 byte display buffer
   byte   DspBuff1[6]            ' 6 byte display buffer1
