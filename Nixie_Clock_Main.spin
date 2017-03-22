@@ -242,7 +242,6 @@ PUB main| i,c
       else
         ' Setting the seconds resets the time
         phsa := 0
-        RTCEngine.setSeconds(secs)
     else
       ' get the date
       yrs     := RTCEngine.getYear
@@ -350,6 +349,14 @@ PUB main| i,c
     repeat until not lockset(SemID)
     bytemove(@DspBuff1, @DspBuff, 6)
     lockclr(SemID)
+    phsatmp := phsa
+    
+    ' set seconds after updating display so
+    ' it's close to start of second but does not
+    ' delay display (1-2 ms to set seconds)
+    ' loop after sync point takes 500-1000 us
+    if gpsfix > 0
+      RTCEngine.setSeconds(secs)
     
     if flags & flgPrint
       ' Print out time to the console
@@ -359,7 +366,7 @@ PUB main| i,c
       term.tx(CLREOL)
       printdate
     
-    repeat until phsa > (RTCfreq*1/4)-1 ' Wait for 250 ms before pulling the time
+    repeat until phsa > (RTCfreq/2)-1 ' Wait for 500 ms before pulling the time
       ' Sleep in between edges
       waitpne(|< RTC_SQW, |< RTC_SQW, 0)
       waitpne(|< 0,       |< RTC_SQW, 0)
@@ -510,7 +517,8 @@ PRI printdate
   ' counter debug
   term.tx(LF)
   term.str(string("PHSA: "))
-  fmt2dig(phsa)
+  fmt2dig(phsatmp * 1000 * 1000 / RTCfreq)
+  term.str(String(" us"))
   term.tx(CLREOL)
 
   
@@ -555,9 +563,11 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
         refreshRate := 2880
       
       repeat digPos from 0 to 5                  ' Get next digit position
+        lockclr(SemID)
         digit  := byte[@DspBuff1][digPos]        ' Get char and validate
         segwrd := word[@NumTab][digit&$f] & $ffff
         digwrd := word[@DigSel][digPos]
+        repeat until not lockset(SemID)
         
         if (digit&$80 or segwrd)                 ' something to show?
           outa[Seg9Pin..Seg0Pin] := segwrd       ' Enable the next character
@@ -566,13 +576,7 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
           outa[LowCharPin..HighCharPin] := digwrd
         else
           waitcnt (clkfreq / 25_000 + cnt)       ' Wait 20 usec for drivers to turn off
-        
-        if digPos == 5
-          lockclr(SemID)
-          waitcnt (clkfreq / refreshRate + cnt)  ' Wait 2000 usec (500 Hz, 83.3 Hz per digit)
-          repeat until not lockset(SemID)
-        else
-          waitcnt (clkfreq / refreshRate + cnt)  ' Wait 2000 usec
+        waitcnt (clkfreq / refreshRate + cnt)    ' Wait before moving to next digit
         outa[LowCharPin..HighCharPin]~
         
     else
