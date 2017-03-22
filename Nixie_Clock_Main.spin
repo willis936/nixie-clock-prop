@@ -46,7 +46,7 @@ VAR
   long runningCogID
   long stack[50]
   long UTCOffset, UTCTemp, localTimeGPS
-  long RTCfreq
+  long RTCfreq, RTCmax, RTCrollover
   byte hrs, mns, secs
   byte days, mons, yrs, dayofwk
   byte SemID
@@ -115,6 +115,8 @@ PUB main| i,c
   UTCTemp     := 0    ' Default new UTC value
   century     := 20   ' Assume the clock was booted in 20XX
   RTCfreq     := 8192 ' How many clock edges to count per second
+  RTCmax      := (RTCfreq*9/8)-1
+  RTCrollover := RTCfreq/8
   SemID       := locknew
   
   dira[HVPS_ENB]~~        ' Enable high voltage
@@ -195,13 +197,6 @@ PUB main| i,c
       mns  := (localTimeGPS / 100)   // 100
       secs := (localTimeGPS          // 100)
       
-      ' update DST
-      if not ina[DSTPin]
-        DST := isDST
-        if DST
-          ' Calendar will be off by a day from 11pm to midnight
-          hrs := (hrs+1)//24
-      
       ' Get the time, assume you just read the data for the next second
       ' Assuming data is from one second ago, take care of time rollover
       repeat i from 1 to 2
@@ -219,46 +214,22 @@ PUB main| i,c
           ' Only update the date when not rolling over a day
           RTCEngine.setYear((century*100)+yrs)
           RTCEngine.setMonth(mons)
-          RTCEngine.setDay(days)
-          RTCEngine.setDate(dayofwk)
+          RTCEngine.setDate(days)
+          RTCEngine.setDay(dayofwk)
       
       ' update the RTC when there is a GPS fix
       RTCEngine.setHours(hrs)
       RTCEngine.setMinutes(mns)
-      
-	    ' Synchronize the main loop to the GPS
-      repeat until ina[GPS_PPS]   ' Sync up to GPS PPS
-        ' Sleep in between edges or as soon as PPS goes high
-        waitpne(|< RTC_SQW, (|< RTC_SQW) & (|< GPS_PPS), 0)
-        waitpne(|< 0,       (|< RTC_SQW) & (|< GPS_PPS), 0)
-        ' If GPS is lost the PPS will never come
-        ' Must wait more than one RTC second in case RTC is fast
-        if phsa > (RTCfreq*9/8)-1
-          quit
-      ' account for the missing 1/8 of a second
-      if phsa > (RTCfreq*9/8)-1
-        gpsfix := 0
-        phsa := (RTCfreq*1/8)
-      else
-        ' Setting the seconds resets the time
-        phsa := 0
     else
       ' get the date
       yrs     := RTCEngine.getYear
       mons    := RTCEngine.getMonth
-      days    := RTCEngine.getDay
-      dayofwk := RTCEngine.getDate
+      days    := RTCEngine.getDate
+      dayofwk := RTCEngine.getDay
       ' get the time
       hrs  := RTCEngine.getHours
       mns  := RTCEngine.getMinutes
       secs := RTCEngine.getSeconds
-      
-      ' update DST
-      if not ina[DSTPin]
-        DST := isDST
-        if DST
-          ' Calendar will be off by a day from 11pm to midnight
-          hrs := (hrs+1)//24
       
       repeat i from 1 to 1
         secs += 1
@@ -270,12 +241,7 @@ PUB main| i,c
           mns  := 0
         if hrs > 23
           hrs  := 0
-      
-      repeat until phsa > RTCfreq-1 ' Wait for square wave counter
-        ' Sleep in between edges
-        waitpne(|< RTC_SQW, |< RTC_SQW, 0)
-        waitpne(|< 0,       |< RTC_SQW, 0)
-      phsa := 0
+    
     ' check if it's a new century!
     if yrs == 0
       if mons == 1
@@ -297,6 +263,39 @@ PUB main| i,c
       gps.stop
       gps.startx(GPS_RX, UTCOffset, 9600, 1250)
       RTCEngine.setHours(hrs)
+    
+    ' update DST
+    if not ina[DSTPin]
+      DST := isDST
+      if DST
+        ' Calendar will be off by a day from 11pm to midnight
+        hrs := (hrs+1)//24
+    
+    ' main loop second sync point
+    if gpsfix > 0
+      ' Synchronize the main loop to the GPS
+      repeat until ina[GPS_PPS]   ' Sync up to GPS PPS
+        ' Sleep in between edges or as soon as PPS goes high
+        waitpne(|< RTC_SQW, (|< RTC_SQW) & (|< GPS_PPS), 0)
+        waitpne(|< 0,       (|< RTC_SQW) & (|< GPS_PPS), 0)
+        ' If GPS is lost the PPS will never come
+        ' Must wait more than one RTC second in case RTC is fast
+        if phsa > RTCmax
+          quit
+      ' account for the missing 1/8 of a second
+      if phsa > RTCmax
+        gpsfix := 0
+        phsa := RTCrollover
+      else
+        ' Setting the seconds resets the time
+        phsa := 0
+    else
+      ' Synchronize the main loop to the RTC SQW phsa counter
+      repeat until phsa > RTCfreq-1 ' Wait for square wave counter
+        ' Sleep in between edges
+        waitpne(|< RTC_SQW, |< RTC_SQW, 0)
+        waitpne(|< 0,       |< RTC_SQW, 0)
+      phsa := 0
     
     ' Write hours to display buffer
     case hrs  ' Display AM/PM
@@ -354,8 +353,8 @@ PUB main| i,c
     
     ' set seconds after updating display so
     ' it's close to start of second but does not
-    ' delay display (1-2 ms to set seconds)
-    ' loop after sync point to display update takes 500 us
+    ' delay display (1 ms to set seconds)
+    ' loop after sync point to display update takes 366 us
     if gpsfix > 0
       RTCEngine.setSeconds(secs)
     
@@ -593,6 +592,7 @@ PRI isDST | previousSunday
   if (mons > 3 and mons < 11)
     return true
   previousSunday := days - (dayofwk-1)
+  
   ' In march, we are DST if our previous sunday was on or after the 8th.
   if mons == 3
     if previousSunday >= 8
