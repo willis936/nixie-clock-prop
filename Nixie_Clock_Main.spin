@@ -549,7 +549,6 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
   dira[Seg0Pin..Seg9Pin]~~          ' Set segment pins to outputs
   dira[LowCharPin..HighCharPin]~~   ' Set numeric pins to outputs
   dira[DPPin]~~                     ' Set decimal point pin to output
-  repeat until not lockset(SemID)
   
   repeat
     if flags & isEnabled
@@ -563,9 +562,10 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
         ' 2880: (480 Hz  6.3% duty cycle, 2.1 ms accuracy)
         refreshRate := 2880
       
-      lockclr(SemID)
       repeat digPos from 0 to 5                  ' Get next digit position
+        repeat until not lockset(SemID)
         digit  := byte[@DspBuff1][digPos]        ' Get char and validate
+        lockclr(SemID)
         segwrd := word[@NumTab][digit&$f] & $ffff
         digwrd := word[@DigSel][digPos]
         
@@ -578,7 +578,6 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
           waitcnt (clkfreq / 25_000 + cnt)       ' Wait 20 usec for drivers to turn off
         waitcnt (clkfreq / refreshRate + cnt)    ' Wait before moving to next digit
         outa[LowCharPin..HighCharPin]~
-      repeat until not lockset(SemID)
     else
       outa[HighCharPin..LowCharPin]~~              ' Disable all characters if not in direct drive
       waitcnt (clkfreq / 10 + cnt)                 ' Wait 1/10 second before checking again
