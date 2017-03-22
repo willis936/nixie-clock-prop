@@ -181,7 +181,7 @@ PUB main| i,c
     {{ Debug swap time source
     if secs // 10 < 5
       gpsfix := 0
-    }}
+    '}}
     
     if gpsfix > 0
       ' Get the date
@@ -194,6 +194,13 @@ PUB main| i,c
       hrs  := (localTimeGPS / 10000) // 100
       mns  := (localTimeGPS / 100)   // 100
       secs := (localTimeGPS          // 100)
+      
+      ' update DST
+      if not ina[DSTPin]
+        DST := isDST
+        if DST
+          ' Calendar will be off by a day from 11pm to midnight
+          hrs := (hrs+1)//24
       
       ' Get the time, assume you just read the data for the next second
       ' Assuming data is from one second ago, take care of time rollover
@@ -214,13 +221,6 @@ PUB main| i,c
           RTCEngine.setMonth(mons)
           RTCEngine.setDay(days)
           RTCEngine.setDate(dayofwk)
-      
-      ' update DST
-      if not ina[DSTPin]
-        DST := isDST
-        if DST
-          ' Calendar will be off by a day from 11pm to midnight
-          hrs := (hrs+1)//24
       
       ' update the RTC when there is a GPS fix
       RTCEngine.setHours(hrs)
@@ -252,6 +252,14 @@ PUB main| i,c
       hrs  := RTCEngine.getHours
       mns  := RTCEngine.getMinutes
       secs := RTCEngine.getSeconds
+      
+      ' update DST
+      if not ina[DSTPin]
+        DST := isDST
+        if DST
+          ' Calendar will be off by a day from 11pm to midnight
+          hrs := (hrs+1)//24
+      
       repeat i from 1 to 1
         secs += 1
         if secs > 59
@@ -262,13 +270,6 @@ PUB main| i,c
           mns  := 0
         if hrs > 23
           hrs  := 0
-      
-      ' update DST
-      if not ina[DSTPin]
-        DST := isDST
-        if DST
-          ' Calendar will be off by a day from 11pm to midnight
-          hrs := (hrs+1)//24
       
       repeat until phsa > RTCfreq-1 ' Wait for square wave counter
         ' Sleep in between edges
@@ -354,7 +355,7 @@ PUB main| i,c
     ' set seconds after updating display so
     ' it's close to start of second but does not
     ' delay display (1-2 ms to set seconds)
-    ' loop after sync point takes 500-1000 us
+    ' loop after sync point to display update takes 500 us
     if gpsfix > 0
       RTCEngine.setSeconds(secs)
     
@@ -562,12 +563,11 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
         ' 2880: (480 Hz  6.3% duty cycle, 2.1 ms accuracy)
         refreshRate := 2880
       
+      lockclr(SemID)
       repeat digPos from 0 to 5                  ' Get next digit position
-        lockclr(SemID)
         digit  := byte[@DspBuff1][digPos]        ' Get char and validate
         segwrd := word[@NumTab][digit&$f] & $ffff
         digwrd := word[@DigSel][digPos]
-        repeat until not lockset(SemID)
         
         if (digit&$80 or segwrd)                 ' something to show?
           outa[Seg9Pin..Seg0Pin] := segwrd       ' Enable the next character
@@ -578,7 +578,7 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
           waitcnt (clkfreq / 25_000 + cnt)       ' Wait 20 usec for drivers to turn off
         waitcnt (clkfreq / refreshRate + cnt)    ' Wait before moving to next digit
         outa[LowCharPin..HighCharPin]~
-        
+      repeat until not lockset(SemID)
     else
       outa[HighCharPin..LowCharPin]~~              ' Disable all characters if not in direct drive
       waitcnt (clkfreq / 10 + cnt)                 ' Wait 1/10 second before checking again
