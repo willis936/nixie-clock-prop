@@ -115,8 +115,8 @@ PUB main| i,c
   UTCTemp     := 0    ' Default new UTC value
   century     := 20   ' Assume the clock was booted in 20XX
   RTCfreq     := 8192 ' How many clock edges to count per second
-  RTCmax      := (RTCfreq*9/8)-1
-  RTCrollover := RTCfreq/8
+  RTCmax      := RTCfreq*9/8
+  RTCrollover := RTCfreq - RTCmax
   SemID       := locknew
   
   dira[HVPS_ENB]~~        ' Enable high voltage
@@ -271,33 +271,7 @@ PUB main| i,c
         ' Calendar will be off by a day from 11pm to midnight
         hrs := (hrs+1)//24
     
-    ' main loop second sync point
-    if gpsfix > 0
-      ' Synchronize the main loop to the GPS
-      repeat until ina[GPS_PPS]   ' Sync up to GPS PPS
-        ' Sleep in between edges or as soon as PPS goes high
-        waitpne(|< RTC_SQW, (|< RTC_SQW) & (|< GPS_PPS), 0)
-        waitpne(|< 0,       (|< RTC_SQW) & (|< GPS_PPS), 0)
-        ' If GPS is lost the PPS will never come
-        ' Must wait more than one RTC second in case RTC is fast
-        if phsa > RTCmax
-          quit
-      ' account for the missing 1/8 of a second
-      if phsa > RTCmax
-        gpsfix := 0
-        phsa := RTCrollover
-      else
-        ' Setting the seconds resets the time
-        phsa := 0
-    else
-      ' Synchronize the main loop to the RTC SQW phsa counter
-      repeat until phsa > RTCfreq-1 ' Wait for square wave counter
-        ' Sleep in between edges
-        waitpne(|< RTC_SQW, |< RTC_SQW, 0)
-        waitpne(|< 0,       |< RTC_SQW, 0)
-      phsa := 0
-    
-    ' Write hours to display buffer
+        ' Write hours to display buffer
     case hrs  ' Display AM/PM
       0     : ' 12am
               DspBuff[5] := numberToBCD(12) >> nibble
@@ -329,6 +303,30 @@ PUB main| i,c
     else
       DspBuff[0] := numberToBCD(secs) & lsnibble
     
+    ' main loop second sync point
+    if gpsfix > 0
+      ' Synchronize the main loop to the GPS
+      repeat until ina[GPS_PPS]   ' Sync up to GPS PPS
+        ' Sleep in between edges or as soon as PPS goes high
+        waitpne(|< RTC_SQW, (|< RTC_SQW) & (|< GPS_PPS), 0)
+        waitpne(|< 0,       (|< RTC_SQW) & (|< GPS_PPS), 0)
+        ' If GPS is lost the PPS will never come
+        ' Must wait more than one RTC second in case RTC is fast
+        if phsa => RTCmax
+          quit
+      if phsa < RTCmax
+        phsa := 0
+      else
+        ' account for the missing 1/8 of a second
+        phsa := RTCrollover
+    else
+      ' Synchronize the main loop to the RTC SQW phsa counter
+      repeat until phsa => RTCfreq ' Wait for square wave counter
+        ' Sleep in between edges
+        waitpne(|< RTC_SQW, |< RTC_SQW, 0)
+        waitpne(|< 0,       |< RTC_SQW, 0)
+      phsa := 0
+    
     ' Anti poisoning (3am everyday)
     if hrs == 3
       if mns == 0
@@ -351,10 +349,11 @@ PUB main| i,c
     lockclr(SemID)
     phsatmp := phsa
     
+    ' Setting the seconds resets the time
     ' set seconds after updating display so
     ' it's close to start of second but does not
     ' delay display (1 ms to set seconds)
-    ' loop after sync point to display update takes 366 us
+    ' loop after sync point to display update takes < 122 us
     if gpsfix > 0
       RTCEngine.setSeconds(secs)
     
@@ -366,7 +365,7 @@ PUB main| i,c
       term.tx(CLREOL)
       printdate
     
-    repeat until phsa > (RTCfreq/2)-1 ' Wait for 500 ms before pulling the time
+    repeat until phsa => RTCfreq/2 ' Wait for 500 ms before pulling the time
       ' Sleep in between edges
       waitpne(|< RTC_SQW, |< RTC_SQW, 0)
       waitpne(|< 0,       |< RTC_SQW, 0)
@@ -555,11 +554,15 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
         refreshRate := 6
       else
         ' refresh rate controls max accuracy.
-        ' If we loop 720 times a second, 6 digits: 720/6 = 120 Hz
-        '  720: (120 Hz   15% duty cycle, 8.3 ms accuracy)
-        ' 1440: (240 Hz 11.2% duty cycle, 4.1 ms accuracy)
-        ' 2880: (480 Hz  6.3% duty cycle, 2.1 ms accuracy)
-        refreshRate := 2880
+        ' If we loop 720 times a second, 6 digits: 720 / 6 = 120 Hz
+        ' 720*(1/720 - 40 us to turn on/off digit) / 6 = 16.2% duty cycle
+        ' 6/720 = 8.3 ms accuracy
+        '   720: (120  Hz 16.2% duty cycle, 8.3 ms accuracy)
+        '  1440: (240  Hz 15.8% duty cycle, 4.1 ms accuracy)
+        '  2880: (480  Hz 14.7% duty cycle, 2.1 ms accuracy)
+        '  5760: (960  Hz 12.8% duty cycle, 1.0 ms accuracy)
+        ' 11520: (1920 Hz  8.9% duty cycle, 0.5 ms accuracy)
+        refreshRate := 11520
       
       repeat digPos from 0 to 5                  ' Get next digit position
         repeat until not lockset(SemID)
