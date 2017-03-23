@@ -365,7 +365,7 @@ PUB main| i,c
       term.tx(CLREOL)
       printdate
     
-    repeat until phsa => RTCfreq/2 ' Wait for 500 ms before pulling the time
+    repeat until phsa => RTCfreq/4 ' Wait for 250 ms before pulling the time
       ' Sleep in between edges
       waitpne(|< RTC_SQW, |< RTC_SQW, 0)
       waitpne(|< 0,       |< RTC_SQW, 0)
@@ -554,6 +554,7 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
         refreshRate := 6
       else
         ' refresh rate controls max accuracy.
+        ' setting too high causes bleed because driver has capacitance
         ' If we loop 720 times a second, 6 digits: 720 / 6 = 120 Hz
         ' 720*(1/720 - 40 us to turn on/off digit) / 6 = 16.2% duty cycle
         ' 6/720 = 8.3 ms accuracy
