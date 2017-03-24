@@ -556,14 +556,14 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
         ' refresh rate controls max accuracy.
         ' setting too high causes bleed because driver has capacitance
         ' If we loop 720 times a second, 6 digits: 720 / 6 = 120 Hz
-        ' 720*(1/720 - 40 us to turn on/off digit) / 6 = 16.2% duty cycle
+        ' 720*(1/720 - 20 us to turn on/off digit) / 6 = 16.4% duty cycle
         ' 6/720 = 8.3 ms accuracy
-        '   720: (120  Hz 16.2% duty cycle, 8.3 ms accuracy)
-        '  1440: (240  Hz 15.8% duty cycle, 4.1 ms accuracy)
-        '  2880: (480  Hz 14.7% duty cycle, 2.1 ms accuracy)
-        '  5760: (960  Hz 12.8% duty cycle, 1.0 ms accuracy)
-        ' 11520: (1920 Hz  8.9% duty cycle, 0.5 ms accuracy)
-        refreshRate := 11520
+        '   720: (120  Hz 16.4% duty cycle, 8.3 ms accuracy)
+        '  1440: (240  Hz 16.2% duty cycle, 4.1 ms accuracy)
+        '  2880: (480  Hz 15.7% duty cycle, 2.1 ms accuracy)
+        '  5760: (960  Hz 14.7% duty cycle, 1.0 ms accuracy)
+        ' 11520: (1920 Hz 10.2% duty cycle, 0.5 ms accuracy)
+        refreshRate := 5760
       
       repeat digPos from 0 to 5                  ' Get next digit position
         repeat until not lockset(SemID)
@@ -575,10 +575,10 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
         if (digit&$80 or segwrd)                 ' something to show?
           outa[Seg9Pin..Seg0Pin] := segwrd       ' Enable the next character
           outa[DPPin] := (digit&$80) >> 7
-          waitcnt (clkfreq / 25_000 + cnt)       ' Wait 20 usec for drivers to turn off
+          waitcnt (clkfreq / 100_000 + cnt)      ' Wait 10 usec for drivers to turn off
           outa[LowCharPin..HighCharPin] := digwrd
         else
-          waitcnt (clkfreq / 25_000 + cnt)       ' Wait 20 usec for drivers to turn off
+          waitcnt (clkfreq / 100_000 + cnt)      ' Wait 10 usec for drivers to turn off
         waitcnt (clkfreq / refreshRate + cnt)    ' Wait before moving to next digit
         outa[LowCharPin..HighCharPin]~
     else
