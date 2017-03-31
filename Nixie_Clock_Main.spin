@@ -18,48 +18,17 @@ Dipswitch 6 is used to enable/disable DST.
 }}
 
 CON
-  _clkmode = xtal1 + pll16x
-  _xinfreq = 5_000_000
+  _CLKMODE = RCFAST
   nibble = 4
   lsnibble = $f
   dispdp = $80
   lonedp = $8f
-
-
-OBJ
-  RTCEngine     : "RTCEngine"
-  gps           : "gps_basic"
-  term          : "FullDuplexSerialPlus"
-  weekdaycalc   : "DayOfTheWeek"
-  ASCII         : "ASCII0_STREngine_1"
-
-
-VAR
-  byte cmd, out
-  byte data[12]
-  long LowCharPin, HighCharPin        ' The pins for specifying chars.
-  long DPPin                          ' The pins for specifying chars.
-  long Seg0Pin, Seg9Pin               ' The pins for the segments.
-  long LowUTCPin, HighUTCPin          ' The pins for specifying the UTC offset in hours.
-  long DSTPin                         ' The pin  for specifying DST checking.
-  long flags
-  long runningCogID
-  long stack[50]
-  long UTCOffset, UTCTemp, localTimeGPS
-  long RTCfreq, RTCmax, RTCrollover
-  byte hrs, mns, secs
-  byte days, mons, yrs, dayofwk
-  byte SemID
-  byte DST, century, gpsfix, phsatmp
   
-  byte   DspBuff[6]             ' 6 byte display buffer
-  byte   DspBuff1[6]            ' 6 byte display buffer1
-  
-CON
-  isEnabled  = %0001            ' Display ENABLE flag
-  flgPrint   = %0010            ' Print to terminal flag
-  flgDirect  = %0100            ' Direct Drive mode flag
-  flgDST     = %1000            ' DST checking flag
+  ' Flag Masks
+  isEnabled  = %0001  ' Display ENABLE flag
+  flgPrint   = %0010  ' Print to terminal flag
+  flgDirect  = %0100  ' Direct Drive mode flag
+  flgDST     = %1000  ' DST checking flag
   
 ' Pin Assignments
   C_DIG0        = 0
@@ -93,13 +62,41 @@ CON
   GPS_PPS       = 27
   
   RTC_SQW       = 25
-  RTC_i2cSCL    = 28
-  RTC_i2cSDA    = 29
-
-con
-
-   #1, HOME, GOTOXY, #8, BKSP, TAB, LF, CLREOL, CLRDN, CR       ' Terminal formmatting control
+  
+  COM_TX        = 30
+  COM_RX        = 31
+  
+  ' Terminal formmatting control
+  #1, HOME, GOTOXY, #8, BKSP, TAB, LF, CLREOL, CLRDN, CR
   #14, GOTOX, GOTOY, CLS
+
+OBJ
+  RTCEngine     : "RTCEngine"
+  gps           : "gps_basic"
+  term          : "FullDuplexSerialPlus"
+  weekdaycalc   : "DayOfTheWeek"
+  ASCII         : "ASCII0_STREngine_1"
+
+VAR
+  byte cmd, out
+  byte data[12]
+  long LowCharPin, HighCharPin        ' The pins for specifying chars.
+  long DPPin                          ' The pins for specifying chars.
+  long Seg0Pin, Seg9Pin               ' The pins for the segments.
+  long LowUTCPin, HighUTCPin          ' The pins for specifying the UTC offset in hours.
+  long DSTPin                         ' The pin  for specifying DST checking.
+  long flags
+  long runningCogID
+  long stack[50]
+  long UTCOffset, UTCTemp, localTimeGPS
+  long RTCfreq, RTCmax, RTCrollover
+  byte hrs, mns, secs
+  byte days, mons, yrs, dayofwk
+  byte SemID
+  byte DST, century, gpsfix, phsatmp
+  
+  byte   DspBuff[6]             ' 6 byte display buffer
+  byte   DspBuff1[6]            ' 6 byte display buffer1
 
 PUB main| i,c
   
@@ -139,7 +136,7 @@ PUB main| i,c
   ' GPS serial port setup
   gps.startx(GPS_RX, UTCOffset, 9600, 1250)
   
-  term.start(31, 30, 0, 115200)
+  term.start(COM_RX, COM_TX, 0, 115200)
   clearterm
   term.Str(String("Paul's Nixie Clock"))
   term.tx(CLREOL)
@@ -303,6 +300,13 @@ PUB main| i,c
     else
       DspBuff[0] := numberToBCD(secs) & lsnibble
     
+    CLKSET(RCSLOW, 20_000)            ' Sleep at 20 KHz
+    repeat until phsa => 9*RTCfreq/10 ' Wait until 900 ms before checking sync
+      ' Sleep in between edges
+      waitpne(|< RTC_SQW, |< RTC_SQW, 0)
+      waitpne(|< 0,       |< RTC_SQW, 0)
+    CLKSET(RCFAST, 12_000_000)        ' Wake up
+    
     ' main loop second sync point
     if gpsfix > 0
       ' Synchronize the main loop to the GPS
@@ -353,7 +357,7 @@ PUB main| i,c
     ' set seconds after updating display so
     ' it's close to start of second but does not
     ' delay display (1 ms to set seconds)
-    ' loop after sync point to display update takes < 122 us
+    ' loop after  point to display update takes < 122 us
     if gpsfix > 0
       RTCEngine.setSeconds(secs)
     
@@ -365,10 +369,12 @@ PUB main| i,c
       term.tx(CLREOL)
       printdate
     
-    repeat until phsa => RTCfreq/4 ' Wait for 250 ms before pulling the time
+    CLKSET(RCSLOW, 20_000)          ' Sleep at 20 KHz
+    repeat until phsa => RTCfreq/4  ' Wait for 250 ms before pulling the time
       ' Sleep in between edges
       waitpne(|< RTC_SQW, |< RTC_SQW, 0)
       waitpne(|< 0,       |< RTC_SQW, 0)
+    CLKSET(RCFAST, 12_000_000)      ' Wake up
     
 
 PRI numberToBCD(number) ' 4 Stack Longs 
@@ -561,9 +567,12 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
         '   720: (120  Hz 16.4% duty cycle, 8.3 ms accuracy)
         '  1440: (240  Hz 16.2% duty cycle, 4.1 ms accuracy)
         '  2880: (480  Hz 15.7% duty cycle, 2.1 ms accuracy)
+        '  4320: (720  Hz 15.2% duty cycle, 1.4 ms accuracy)
         '  5760: (960  Hz 14.7% duty cycle, 1.0 ms accuracy)
+        '  7200: (1200 Hz 14.3% duty cycle, 0.8 ms accuracy)
         ' 11520: (1920 Hz 10.2% duty cycle, 0.5 ms accuracy)
-        refreshRate := 5760
+        ' 36000: (6000 Hz  4.7% duty cycle, 0.2 ms accuracy)
+        refreshRate := 36000
       
       repeat digPos from 0 to 5                  ' Get next digit position
         repeat until not lockset(SemID)
