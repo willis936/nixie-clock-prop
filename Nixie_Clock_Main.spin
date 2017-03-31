@@ -301,7 +301,7 @@ PUB main| i,c
       DspBuff[0] := numberToBCD(secs) & lsnibble
     
     CLKSET(RCSLOW, 20_000)            ' Sleep at 20 KHz
-    repeat until phsa => 9*RTCfreq/10 ' Wait until 900 ms before checking sync
+    repeat until phsa => (2*RTCfreq)-RTCmax ' Sleep until 875 ms before checking sync
       ' Sleep in between edges
       waitpne(|< RTC_SQW, |< RTC_SQW, 0)
       waitpne(|< 0,       |< RTC_SQW, 0)
@@ -370,7 +370,7 @@ PUB main| i,c
       printdate
     
     CLKSET(RCSLOW, 20_000)          ' Sleep at 20 KHz
-    repeat until phsa => RTCfreq/4  ' Wait for 250 ms before pulling the time
+    repeat until phsa => RTCfreq/4  ' Sleep for 250 ms before pulling the time
       ' Sleep in between edges
       waitpne(|< RTC_SQW, |< RTC_SQW, 0)
       waitpne(|< 0,       |< RTC_SQW, 0)
