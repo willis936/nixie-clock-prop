@@ -18,7 +18,8 @@ Dipswitch 6 is used to enable/disable DST.
 }}
 
 CON
-  _CLKMODE = RCFAST
+  _clkmode = xtal1 + pll16x
+  _xinfreq = 5_000_000
   nibble = 4
   lsnibble = $f
   dispdp = $80
@@ -90,10 +91,11 @@ VAR
   long stack[50]
   long UTCOffset, UTCTemp, localTimeGPS
   long RTCfreq, RTCmax, RTCrollover
+  long updatetime
   byte hrs, mns, secs
   byte days, mons, yrs, dayofwk
   byte SemID
-  byte DST, century, gpsfix, phsatmp
+  byte DST, century, gpsfix
   
   byte   DspBuff[6]             ' 6 byte display buffer
   byte   DspBuff1[6]            ' 6 byte display buffer1
@@ -300,12 +302,22 @@ PUB main| i,c
     else
       DspBuff[0] := numberToBCD(secs) & lsnibble
     
-    CLKSET(RCSLOW, 20_000)            ' Sleep at 20 KHz
+    ' Anti poisoning (3am everyday)
+    if hrs == 3
+      if mns == 0
+        flags |= flgDirect  ' Enable direct drive
+          repeat i from 0 to 5
+            if secs > 29
+              DspBuff[i] := numberToBCD(secs // 10)
+            else
+              DspBuff[i] := numberToBCD(secs // 10) | dispdp
+      else
+        flags &= !flgDirect ' Disable direct drive
+    
     repeat until phsa => (2*RTCfreq)-RTCmax ' Sleep until 875 ms before checking sync
       ' Sleep in between edges
       waitpne(|< RTC_SQW, |< RTC_SQW, 0)
       waitpne(|< 0,       |< RTC_SQW, 0)
-    CLKSET(RCFAST, 12_000_000)        ' Wake up
     
     ' main loop second sync point
     if gpsfix > 0
@@ -330,18 +342,7 @@ PUB main| i,c
         waitpne(|< RTC_SQW, |< RTC_SQW, 0)
         waitpne(|< 0,       |< RTC_SQW, 0)
       phsa := 0
-    
-    ' Anti poisoning (3am everyday)
-    if hrs == 3
-      if mns == 0
-        flags |= flgDirect  ' Enable direct drive
-          repeat i from 0 to 5
-            if secs > 29
-              DspBuff[i] := numberToBCD(secs // 10)
-            else
-              DspBuff[i] := numberToBCD(secs // 10) | dispdp
-      else
-        flags &= !flgDirect ' Disable direct drive
+    updatetime := cnt
     
     {{'Display debug
     repeat i from 0 to 5
@@ -351,7 +352,7 @@ PUB main| i,c
     repeat until not lockset(SemID)
     bytemove(@DspBuff1, @DspBuff, 6)
     lockclr(SemID)
-    phsatmp := phsa
+    updatetime := cnt - updatetime
     
     ' Setting the seconds resets the time
     ' set seconds after updating display so
@@ -369,12 +370,10 @@ PUB main| i,c
       term.tx(CLREOL)
       printdate
     
-    CLKSET(RCSLOW, 20_000)          ' Sleep at 20 KHz
     repeat until phsa => RTCfreq/4  ' Sleep for 250 ms before pulling the time
       ' Sleep in between edges
       waitpne(|< RTC_SQW, |< RTC_SQW, 0)
       waitpne(|< 0,       |< RTC_SQW, 0)
-    CLKSET(RCFAST, 12_000_000)      ' Wake up
     
 
 PRI numberToBCD(number) ' 4 Stack Longs 
@@ -521,9 +520,9 @@ PRI printdate
   
   ' counter debug
   term.tx(LF)
-  term.str(string("PHSA: "))
-  fmt2dig(phsatmp * 1000 * 1000 / RTCfreq)
-  term.str(String(" us"))
+  term.str(string("DEL:  "))
+  fmt2dig(updatetime)
+  term.str(String(" cycles"))
   term.tx(CLREOL)
 
   
@@ -572,7 +571,7 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
         '  7200: (1200 Hz 14.3% duty cycle, 0.8 ms accuracy)
         ' 11520: (1920 Hz 10.2% duty cycle, 0.5 ms accuracy)
         ' 36000: (6000 Hz  4.7% duty cycle, 0.2 ms accuracy)
-        refreshRate := 36000
+        refreshRate := 5760
       
       repeat digPos from 0 to 5                  ' Get next digit position
         repeat until not lockset(SemID)
