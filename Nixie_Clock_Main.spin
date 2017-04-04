@@ -316,6 +316,7 @@ PUB main| i,c
         flags &= !flgDirect ' Disable direct drive
     
     ' Sleep until just before checking sync
+    repeat until (phsa => RTCfreq-1 or ina[GPS_PPS])
       ' Sleep in between edges or as soon as PPS goes high
       waitpne(|< RTC_32k, (|< RTC_32k) & (|< GPS_PPS), 0)
       waitpne(|< 0,       (|< RTC_32k) & (|< GPS_PPS), 0)
