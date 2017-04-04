@@ -316,7 +316,8 @@ PUB main| i,c
         flags &= !flgDirect ' Disable direct drive
     
     ' Sleep until just before checking sync
-    repeat until (phsa => RTCfreq-1 or ina[GPS_PPS])
+    ' Assume that RTC is within 1 ms accurate
+    repeat until (phsa => RTCfreq*999/1000 or ina[GPS_PPS])
       ' Sleep in between edges or as soon as PPS goes high
       waitpne(|< RTC_32k, (|< RTC_32k) & (|< GPS_PPS), 0)
       waitpne(|< 0,       (|< RTC_32k) & (|< GPS_PPS), 0)
@@ -583,10 +584,9 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
         ' 36000: (6000 Hz  4.7% duty cycle, 0.2 ms accuracy)
         refreshRate := 4096
       
+      repeat until not lockset(SemID)
       repeat digPos from 0 to 5                  ' Get next digit position
-        repeat until not lockset(SemID)
         digit  := byte[@DspBuff1][digPos]        ' Get char and validate
-        lockclr(SemID)
         segwrd := word[@NumTab][digit&$f] & $ffff
         digwrd := word[@DigSel][digPos]
         
@@ -602,6 +602,7 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
     else
       outa[HighCharPin..LowCharPin]~~              ' Disable all characters if not in direct drive
       waitcnt (clkfreq / 10 + cnt)                 ' Wait 1/10 second before checking again
+    lockclr(SemID)
 
 
 PRI isDST | previousSunday
