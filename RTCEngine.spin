@@ -175,6 +175,27 @@ PUB setYear(year) '' 13 Stack Longs
 
   return setRAM(6, numberToBCD((((year//100) <# 99) #> 0)))
 
+PUB setStatus(state) '' 13 Stack Longs
+
+'' ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+'' │ Sets the DS3231 Control Register.  Bit 7 MSB (rightmost input).  Bit 0 LSB (leftmost input).                             │
+'' │                                                                                                                          │
+'' │ Bit 0   (A1F)     - Alarm 1 flag.  This is high when Alarm 1 is going off.                                               │
+'' │ Bit 1   (A2F)     - Alarm 2 flag.  This is high when Alarm 2 is going off.                                               │
+'' │ Bit 2   (BSY)     - This is high when the RTC is busy performing TXCO functions.                                         │
+'' │ Bit 3   (EN32kHz) - When high this enables the direct oscillator output pin.                                             │
+'' │ Bit 4   (0)       - Unused.                                                                                              │
+'' │ Bit 5   (0)       - Unused.                                                                                              │
+'' │ Bit 6   (0)       - Unused.                                                                                              │
+'' │ Bit 7   (OSF)     - This is high when the oscillator is stopped.  Oscillator stop flag.                                  │
+'' └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+  return setRAM($0F, state)
+
+PUB getStatus(state) '' 13 Stack Longs
+  
+  return getRAM($0F)
+
 PUB setControl(state) '' 13 Stack Longs
 
 '' ┌──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -190,6 +211,10 @@ PUB setControl(state) '' 13 Stack Longs
 '' └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
   return setRAM($0E, state)
+
+PUB getControl(state) '' 13 Stack Longs
+  
+  return getRAM($0E)
 
 PUB setNVSRAM(index, value) '' 14 Stack Longs
 

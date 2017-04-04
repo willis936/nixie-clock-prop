@@ -62,7 +62,7 @@ CON
   GPS_RX        = 26
   GPS_PPS       = 27
   
-  RTC_SQW       = 25
+  RTC_32k       = 25
   
   COM_TX        = 30
   COM_RX        = 31
@@ -90,7 +90,7 @@ VAR
   long runningCogID
   long stack[50]
   long UTCOffset, UTCTemp, localTimeGPS
-  long RTCfreq, RTCmax, RTCrollover
+  long RTCfreq, RTCmax
   long updatetime
   byte hrs, mns, secs
   byte days, mons, yrs, dayofwk
@@ -113,27 +113,28 @@ PUB main| i,c
   UTCOffset   := -5   ' Hard code the UTC offset for now...
   UTCTemp     := 0    ' Default new UTC value
   century     := 20   ' Assume the clock was booted in 20XX
-  RTCfreq     := 8192 ' How many clock edges to count per second
+  RTCfreq     := 32768' How many clock edges to count per second
   RTCmax      := RTCfreq*9/8
-  RTCrollover := RTCfreq - RTCmax
   SemID       := locknew
   
   dira[HVPS_ENB]~~        ' Enable high voltage
   outa[HVPS_ENB]~~
   
   dira[GPS_PPS]~          ' Set PPS pin to input
-  dira[RTC_SQW]~          ' Set SQW pin to input
+  dira[RTC_32k]~          ' Set 32k pin to input
   
   ctra[30..26] := %01010  ' Set up counter for counting positive edges
-  ctra[5..0]   := RTC_SQW ' Monitor the SQW pin
+  ctra[5..0]   := RTC_32k ' Monitor the 32k pin
   frqa         := 1       ' Add 1 to phsa register for every clock tick
   phsa         := 0       ' Clear counter register
   
   dira[HighUTCPin..LowUTCPin]~  ' Set UTC Offset dipswitch pins to input
   dira[DSTPin]~                 ' Set DST enable pin to input
   
-  ' Initialize square wave output from RTC to 8192 Hz
-  RTCEngine.setControl(%0001_1000)
+  ' Initialize 32kHz output from RTC
+  RTCEngine.setStatus(%0000_1000)
+  ' Configure RTC behavior
+  RTCEngine.setControl(%0000_0100)
   
   ' GPS serial port setup
   gps.startx(GPS_RX, UTCOffset, 9600, 1250)
@@ -179,8 +180,8 @@ PUB main| i,c
     
     ' Check if it is a new second
     gpsfix := gps.n_gpsfix
-    {{ Debug swap time source
-    if secs // 10 < 5
+    {{'Debug swap time source
+    if secs // 20 < 10
       gpsfix := 0
     '}}
     
@@ -314,18 +315,24 @@ PUB main| i,c
       else
         flags &= !flgDirect ' Disable direct drive
     
-    repeat until phsa => (2*RTCfreq)-RTCmax ' Sleep until 875 ms before checking sync
-      ' Sleep in between edges
-      waitpne(|< RTC_SQW, |< RTC_SQW, 0)
-      waitpne(|< 0,       |< RTC_SQW, 0)
+    ' Sleep until just before checking sync
+      ' Sleep in between edges or as soon as PPS goes high
+      waitpne(|< RTC_32k, (|< RTC_32k) & (|< GPS_PPS), 0)
+      waitpne(|< 0,       (|< RTC_32k) & (|< GPS_PPS), 0)
+    
+    ' wait until we lock the resource
+    ' By locking the resource here we guarantee
+    ' that the seconds digit is updated just
+    ' after the sync point
+    repeat until not lockset(SemID)
     
     ' main loop second sync point
     if gpsfix > 0
       ' Synchronize the main loop to the GPS
       repeat until ina[GPS_PPS]   ' Sync up to GPS PPS
         ' Sleep in between edges or as soon as PPS goes high
-        waitpne(|< RTC_SQW, (|< RTC_SQW) & (|< GPS_PPS), 0)
-        waitpne(|< 0,       (|< RTC_SQW) & (|< GPS_PPS), 0)
+        waitpne(|< RTC_32k, (|< RTC_32k) & (|< GPS_PPS), 0)
+        waitpne(|< 0,       (|< RTC_32k) & (|< GPS_PPS), 0)
         ' If GPS is lost the PPS will never come
         ' Must wait more than one RTC second in case RTC is fast
         if phsa => RTCmax
@@ -334,22 +341,21 @@ PUB main| i,c
         phsa := 0
       else
         ' account for the missing 1/8 of a second
-        phsa := RTCrollover
+        phsa := RTCmax - RTCfreq
     else
       ' Synchronize the main loop to the RTC SQW phsa counter
       repeat until phsa => RTCfreq ' Wait for square wave counter
         ' Sleep in between edges
-        waitpne(|< RTC_SQW, |< RTC_SQW, 0)
-        waitpne(|< 0,       |< RTC_SQW, 0)
+        waitpne(|< RTC_32k, |< RTC_32k, 0)
+        waitpne(|< 0,       |< RTC_32k, 0)
       phsa := 0
     updatetime := cnt
     
     {{'Display debug
     repeat i from 0 to 5
-      DspBuff[i] := (secs // 10) | dispdp}}
+      DspBuff[i] := (secs // 10) | dispdp
+    '}}
     
-    'wait until we lock the resource
-    repeat until not lockset(SemID)
     bytemove(@DspBuff1, @DspBuff, 6)
     lockclr(SemID)
     updatetime := cnt - updatetime
@@ -372,8 +378,8 @@ PUB main| i,c
     
     repeat until phsa => RTCfreq/4  ' Sleep for 250 ms before pulling the time
       ' Sleep in between edges
-      waitpne(|< RTC_SQW, |< RTC_SQW, 0)
-      waitpne(|< 0,       |< RTC_SQW, 0)
+      waitpne(|< RTC_32k, |< RTC_32k, 0)
+      waitpne(|< 0,       |< RTC_32k, 0)
     
 
 PRI numberToBCD(number) ' 4 Stack Longs 
@@ -565,13 +571,16 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
         ' 6/720 = 8.3 ms accuracy
         '   720: (120  Hz 16.4% duty cycle, 8.3 ms accuracy)
         '  1440: (240  Hz 16.2% duty cycle, 4.1 ms accuracy)
+        '  2048: (341  Hz 16.0% duty cycle, 2.9 ms accuracy)
         '  2880: (480  Hz 15.7% duty cycle, 2.1 ms accuracy)
+        '  4096: (682  Hz 15.3% duty cycle, 1.5 ms accuracy)
         '  4320: (720  Hz 15.2% duty cycle, 1.4 ms accuracy)
         '  5760: (960  Hz 14.7% duty cycle, 1.0 ms accuracy)
+        '  6144: (1024 Hz 14.6% duty cycle, 1.0 ms accuracy)
         '  7200: (1200 Hz 14.3% duty cycle, 0.8 ms accuracy)
         ' 11520: (1920 Hz 10.2% duty cycle, 0.5 ms accuracy)
         ' 36000: (6000 Hz  4.7% duty cycle, 0.2 ms accuracy)
-        refreshRate := 5760
+        refreshRate := 4096
       
       repeat digPos from 0 to 5                  ' Get next digit position
         repeat until not lockset(SemID)
