@@ -568,7 +568,7 @@ PRI dowStr(val)
     6 : return String("Friday")
     7 : return String("Saturday")
 
-PRI ShowDig | digPos, digit , digwrd, segwrd, scanRate, tubeTC
+PRI ShowDig | digPos, digit , digwrd, segwrd, Time, scanRate, tubeTC
 ' ShowDig runs in its own cog and continually updates the display
 ' Digit 0-9 shows decimal number
 ' Digit bit $80 shows left hand decimal point
@@ -590,6 +590,7 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, scanRate, tubeTC
       
       repeat until not lockset(SemID)
       repeat digPos from 0 to 5                 ' Get next digit position
+        Time   := cnt
         digit  := byte[@DspBuff1][digPos]       ' Get char and validate
         segwrd := word[@NumTab][digit&$f] & $ffff
         digwrd := word[@DigSel][digPos]
@@ -598,13 +599,13 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, scanRate, tubeTC
           outa[Seg9Pin..Seg0Pin] := segwrd      ' Enable the next character
           outa[DPPin] := (digit&$80) >> 7
           outa[LowCharPin..HighCharPin] := digwrd
-        waitcnt(cnt + (clkfreq/scanRate)-tubeTC)' Wait before moving to next digit
+        waitcnt(Time+=(clkfreq/scanRate)-tubeTC)' Wait before moving to next digit
         outa[LowCharPin..HighCharPin]~          ' Turn off all digits
-        waitcnt(cnt + tubeTC)                   ' Wait for drivers to turn off
+        waitcnt(Time + tubeTC)                  ' Wait for drivers to turn off
+      lockclr(SemID)
     else
       outa[HighCharPin..LowCharPin]~~           ' Disable all characters if not in direct drive
       waitcnt (clkfreq / 10 + cnt)              ' Wait 1/10 second before checking again
-    lockclr(SemID)
 
 
 PRI isDST | previousSunday
