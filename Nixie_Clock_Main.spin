@@ -70,6 +70,24 @@ CON
   ' Terminal formmatting control
   #1, HOME, GOTOXY, #8, BKSP, TAB, LF, CLREOL, CLRDN, CR
   #14, GOTOX, GOTOY, CLS
+  
+  ' refresh rate controls max accuracy.
+  ' setting too high causes bleed because driver has capacitance
+  ' If we loop 720 times a second, 6 digits: 720 / 6 = 120 Hz
+  ' 720*(1/720 - 20 us to turn off digit) / 6 = 16.4% duty cycle
+  ' 6/720 = 8.3 ms accuracy
+  '   720: (120  Hz 16.4% duty cycle, 8.3 ms accuracy)
+  '  1440: (240  Hz 16.2% duty cycle, 4.1 ms accuracy)
+  '  2048: (341  Hz 16.0% duty cycle, 2.9 ms accuracy)
+  '  2880: (480  Hz 15.7% duty cycle, 2.1 ms accuracy)
+  '  4096: (682  Hz 15.3% duty cycle, 1.5 ms accuracy)
+  '  4320: (720  Hz 15.2% duty cycle, 1.4 ms accuracy)
+  '  5760: (960  Hz 14.7% duty cycle, 1.0 ms accuracy)
+  '  6144: (1024 Hz 14.6% duty cycle, 1.0 ms accuracy)
+  '  7200: (1200 Hz 14.3% duty cycle, 0.8 ms accuracy)
+  ' 11520: (1920 Hz 10.2% duty cycle, 0.5 ms accuracy)
+  ' 36000: (6000 Hz  4.7% duty cycle, 0.2 ms accuracy)
+  refreshRate = 2048
 
 OBJ
   RTCEngine     : "RTCEngine"
@@ -315,9 +333,13 @@ PUB main| i,c
       else
         flags &= !flgDirect ' Disable direct drive
     
-    ' Sleep until just before checking sync
-    ' Assume that RTC is within 1 ms accurate
-    repeat until (phsa => RTCfreq*999/1000 or ina[GPS_PPS])
+    {{'Display debug
+    repeat i from 0 to 5
+      DspBuff[i] := (secs // 10) | dispdp
+    '}}
+    
+    ' Sleep until last display refresh before checking sync
+    repeat until (phsa => RTCfreq*(refreshRate-6)/refreshRate or ina[GPS_PPS])
       ' Sleep in between edges or as soon as PPS goes high
       waitpne(|< RTC_32k, (|< RTC_32k) & (|< GPS_PPS), 0)
       waitpne(|< 0,       (|< RTC_32k) & (|< GPS_PPS), 0)
@@ -351,13 +373,8 @@ PUB main| i,c
         waitpne(|< RTC_32k, |< RTC_32k, 0)
         waitpne(|< 0,       |< RTC_32k, 0)
       phsa := 0
+    
     updatetime := cnt
-    
-    {{'Display debug
-    repeat i from 0 to 5
-      DspBuff[i] := (secs // 10) | dispdp
-    '}}
-    
     bytemove(@DspBuff1, @DspBuff, 6)
     lockclr(SemID)
     updatetime := cnt - updatetime
@@ -551,12 +568,15 @@ PRI dowStr(val)
     6 : return String("Friday")
     7 : return String("Saturday")
 
-PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
+PRI ShowDig | digPos, digit , digwrd, segwrd, scanRate, tubeTC
 ' ShowDig runs in its own cog and continually updates the display
 ' Digit 0-9 shows decimal number
 ' Digit bit $80 shows left hand decimal point
 ' Digit value 10-15 is Blank
-
+  
+  ' How long to wait for the driver to turn off (20 us)
+  tubeTC := clkfreq / 50_000
+  
   dira[Seg0Pin..Seg9Pin]~~          ' Set segment pins to outputs
   dira[LowCharPin..HighCharPin]~~   ' Set numeric pins to outputs
   dira[DPPin]~~                     ' Set decimal point pin to output
@@ -564,44 +584,26 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, refreshRate
   repeat
     if flags & isEnabled
       if flags & flgDirect
-        refreshRate := 6
+        scanRate := 6
       else
-        ' refresh rate controls max accuracy.
-        ' setting too high causes bleed because driver has capacitance
-        ' If we loop 720 times a second, 6 digits: 720 / 6 = 120 Hz
-        ' 720*(1/720 - 20 us to turn on/off digit) / 6 = 16.4% duty cycle
-        ' 6/720 = 8.3 ms accuracy
-        '   720: (120  Hz 16.4% duty cycle, 8.3 ms accuracy)
-        '  1440: (240  Hz 16.2% duty cycle, 4.1 ms accuracy)
-        '  2048: (341  Hz 16.0% duty cycle, 2.9 ms accuracy)
-        '  2880: (480  Hz 15.7% duty cycle, 2.1 ms accuracy)
-        '  4096: (682  Hz 15.3% duty cycle, 1.5 ms accuracy)
-        '  4320: (720  Hz 15.2% duty cycle, 1.4 ms accuracy)
-        '  5760: (960  Hz 14.7% duty cycle, 1.0 ms accuracy)
-        '  6144: (1024 Hz 14.6% duty cycle, 1.0 ms accuracy)
-        '  7200: (1200 Hz 14.3% duty cycle, 0.8 ms accuracy)
-        ' 11520: (1920 Hz 10.2% duty cycle, 0.5 ms accuracy)
-        ' 36000: (6000 Hz  4.7% duty cycle, 0.2 ms accuracy)
-        refreshRate := 4096
+        scanRate := refreshRate
       
       repeat until not lockset(SemID)
-      repeat digPos from 0 to 5                  ' Get next digit position
-        digit  := byte[@DspBuff1][digPos]        ' Get char and validate
+      repeat digPos from 0 to 5                 ' Get next digit position
+        digit  := byte[@DspBuff1][digPos]       ' Get char and validate
         segwrd := word[@NumTab][digit&$f] & $ffff
         digwrd := word[@DigSel][digPos]
         
-        if (digit&$80 or segwrd)                 ' something to show?
-          outa[Seg9Pin..Seg0Pin] := segwrd       ' Enable the next character
+        if (digit&$80 or segwrd)                ' something to show?
+          outa[Seg9Pin..Seg0Pin] := segwrd      ' Enable the next character
           outa[DPPin] := (digit&$80) >> 7
-          waitcnt (clkfreq / 100_000 + cnt)      ' Wait 10 usec for drivers to turn off
           outa[LowCharPin..HighCharPin] := digwrd
-        else
-          waitcnt (clkfreq / 100_000 + cnt)      ' Wait 10 usec for drivers to turn off
-        waitcnt (clkfreq / refreshRate + cnt)    ' Wait before moving to next digit
-        outa[LowCharPin..HighCharPin]~
+        waitcnt(cnt + (clkfreq/scanRate)-tubeTC)' Wait before moving to next digit
+        outa[LowCharPin..HighCharPin]~          ' Turn off all digits
+        waitcnt(cnt + tubeTC)                   ' Wait for drivers to turn off
     else
-      outa[HighCharPin..LowCharPin]~~              ' Disable all characters if not in direct drive
-      waitcnt (clkfreq / 10 + cnt)                 ' Wait 1/10 second before checking again
+      outa[HighCharPin..LowCharPin]~~           ' Disable all characters if not in direct drive
+      waitcnt (clkfreq / 10 + cnt)              ' Wait 1/10 second before checking again
     lockclr(SemID)
 
 
