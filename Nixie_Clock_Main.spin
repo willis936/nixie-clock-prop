@@ -589,8 +589,8 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, Time, scanRate, tubeTC
         scanRate := refreshRate
       
       repeat until not lockset(SemID)
+      Time := cnt
       repeat digPos from 0 to 5                 ' Get next digit position
-        Time   := cnt
         digit  := byte[@DspBuff1][digPos]       ' Get char and validate
         segwrd := word[@NumTab][digit&$f] & $ffff
         digwrd := word[@DigSel][digPos]
@@ -601,7 +601,7 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, Time, scanRate, tubeTC
           outa[LowCharPin..HighCharPin] := digwrd
         waitcnt(Time+=(clkfreq/scanRate)-tubeTC)' Wait before moving to next digit
         outa[LowCharPin..HighCharPin]~          ' Turn off all digits
-        waitcnt(Time + tubeTC)                  ' Wait for drivers to turn off
+        waitcnt(Time+= tubeTC)                  ' Wait for drivers to turn off
       lockclr(SemID)
     else
       outa[HighCharPin..LowCharPin]~~           ' Disable all characters if not in direct drive
