@@ -77,6 +77,7 @@ CON
   ' 720*(1/720 - 20 us to turn off digit) / 6 = 16.4% duty cycle
   ' 6/720 = 8.3 ms accuracy
   '   720: (120  Hz 16.4% duty cycle, 8.3 ms accuracy)
+  '  1024: (171  Hz 16.3% duty cycle, 5.9 ms accuracy)
   '  1440: (240  Hz 16.2% duty cycle, 4.1 ms accuracy)
   '  2048: (341  Hz 16.0% duty cycle, 2.9 ms accuracy)
   '  2880: (480  Hz 15.7% duty cycle, 2.1 ms accuracy)
@@ -87,12 +88,14 @@ CON
   '  7200: (1200 Hz 14.3% duty cycle, 0.8 ms accuracy)
   ' 11520: (1920 Hz 10.2% duty cycle, 0.5 ms accuracy)
   ' 36000: (6000 Hz  4.7% duty cycle, 0.2 ms accuracy)
-  refreshRate = 2048
+  refreshRate = 512
 
 OBJ
   RTCEngine     : "RTCEngine"
   gps           : "gps_basic"
   term          : "FullDuplexSerialPlus"
+  fstring       : "string.float"
+  fmath         : "tiny.math.float"
   weekdaycalc   : "DayOfTheWeek"
   ASCII         : "ASCII0_STREngine_1"
 
@@ -132,7 +135,7 @@ PUB main| i,c
   UTCTemp     := 0    ' Default new UTC value
   century     := 20   ' Assume the clock was booted in 20XX
   RTCfreq     := 32768' How many clock edges to count per second
-  RTCmax      := RTCfreq*9/8
+  RTCmax      := RTCfreq+1 ' wait one RTC cycle before assuming the PPS isn't coming
   SemID       := locknew
   
   dira[HVPS_ENB]~~        ' Enable high voltage
@@ -164,17 +167,16 @@ PUB main| i,c
   term.tx(LF)
   term.tx(CLREOL)
   
-  bytefill(@DspBuff1, $0, 6)
-  runningCogID := cognew(ShowDig, @stack) + 1   ' start the rgb cog
-  
-  flags := isEnabled
-  
   secs := RTCEngine.getSeconds
   if secs == 80  ' Converted from binary to bcd
     ' The clock has not been initialized so let's set it
     ' This will demonstrate hour & day roleover.
     setdate
     settime
+  
+  bytefill(@DspBuff1, $0, 6)
+  flags := isEnabled
+  runningCogID := cognew(ShowDig, @stack) + 1   ' start the display driver cog
   
   term.tx(LF)
   term.Str(String("D = setdate, T = settime, S = show time"))
@@ -227,7 +229,7 @@ PUB main| i,c
           mns  := 0
         if hrs > 23
           hrs  := 0
-        elseif i == 1
+        elseif i == 2
           
           ' Only update the date when not rolling over a day
           RTCEngine.setYear((century*100)+yrs)
@@ -339,7 +341,7 @@ PUB main| i,c
     '}}
     
     ' Sleep until last display refresh before checking sync
-    repeat until (phsa => RTCfreq*(refreshRate-6)/refreshRate or ina[GPS_PPS])
+    repeat until (phsa => RTCfreq*(refreshRate-5)/refreshRate or ina[GPS_PPS])
       ' Sleep in between edges or as soon as PPS goes high
       waitpne(|< RTC_32k, (|< RTC_32k) & (|< GPS_PPS), 0)
       waitpne(|< 0,       (|< RTC_32k) & (|< GPS_PPS), 0)
@@ -349,6 +351,7 @@ PUB main| i,c
     ' that the seconds digit is updated just
     ' after the sync point
     repeat until not lockset(SemID)
+    updatetime := cnt
     
     ' main loop second sync point
     if gpsfix > 0
@@ -364,7 +367,7 @@ PUB main| i,c
       if phsa < RTCmax
         phsa := 0
       else
-        ' account for the missing 1/8 of a second
+        ' account for the missing part of a second
         phsa := RTCmax - RTCfreq
     else
       ' Synchronize the main loop to the RTC SQW phsa counter
@@ -374,7 +377,6 @@ PUB main| i,c
         waitpne(|< 0,       |< RTC_32k, 0)
       phsa := 0
     
-    updatetime := cnt
     bytemove(@DspBuff1, @DspBuff, 6)
     lockclr(SemID)
     updatetime := cnt - updatetime
@@ -469,11 +471,11 @@ PRI moveto(x, y)
 PRI printtime
   ' Print Time
   term.str(string("TIME: "))
-  fmt2dig(RTCEngine.getHours)
+  term.dec(RTCEngine.getHours)
   term.tx(":")
-  fmt2dig(RTCEngine.getMinutes)
+  term.dec(RTCEngine.getMinutes)
   term.tx(":")
-  fmt2dig(RTCEngine.getSeconds)
+  term.dec(RTCEngine.getSeconds)
   term.tx(CLREOL)
   
   ' Print GPS Fix Status
@@ -485,11 +487,11 @@ PRI printtime
   ' Print GPS Time
   term.tx(LF)
   term.str(String("GPS:  "))
-  fmt2dig((ASCII.decimalToInteger(gps.s_local_time)/10000)//100)
+  term.dec((ASCII.decimalToInteger(gps.s_local_time)/10000)//100)
   term.tx(":")
-  fmt2dig((ASCII.decimalToInteger(gps.s_local_time)/100)//100)
+  term.dec((ASCII.decimalToInteger(gps.s_local_time)/100)//100)
   term.tx(":")
-  fmt2dig(ASCII.decimalToInteger(gps.s_local_time)//100)
+  term.dec(ASCII.decimalToInteger(gps.s_local_time)//100)
   term.tx(CLREOL)
   
   ' If GPS is valid, print the location.
@@ -521,11 +523,11 @@ PRI printdate
   ' Print the Date
   term.tx(LF)
   term.str(string("DATE: "))
-  fmt2dig(mons)
+  term.dec(mons)
   term.tx("/")
-  fmt2dig(days)
+  term.dec(days)
   term.tx("/")
-  fmt2dig((century*100)+yrs)
+  term.dec((century*100)+yrs)
   term.tx(CLREOL)
   
   ' Print the Day of the Week
@@ -538,7 +540,7 @@ PRI printdate
   term.tx(LF)
   term.str(string("DST:  "))
   if DST
-    term.str(String("True"))
+    term.str(string("True"))
   else
     term.str(String("False"))
   term.tx(CLREOL)
@@ -546,16 +548,9 @@ PRI printdate
   ' counter debug
   term.tx(LF)
   term.str(string("DEL:  "))
-  fmt2dig(updatetime)
-  term.str(String(" cycles"))
+  term.str(fstring.FloatToString(fmath.FDiv(fmath.FMul(fmath.FFloat(updatetime),fmath.FFloat(1_000_000)),fmath.FFloat(clkfreq))))
+  term.str(string(" us"))
   term.tx(CLREOL)
-
-  
-PRI fmt2dig(val)
-  ' Print integer
-  if val < 10
-    term.tx("0")
-  term.dec(val)
 
 PRI dowStr(val)
   ' Convert Day of the Week integer to string
@@ -568,7 +563,7 @@ PRI dowStr(val)
     6 : return String("Friday")
     7 : return String("Saturday")
 
-PRI ShowDig | digPos, digit , digwrd, segwrd, Time, scanRate, tubeTC
+PRI ShowDig | digPos, digit, digwrd, segwrd, Time, scanRate, tubeTC
 ' ShowDig runs in its own cog and continually updates the display
 ' Digit 0-9 shows decimal number
 ' Digit bit $80 shows left hand decimal point
@@ -589,6 +584,7 @@ PRI ShowDig | digPos, digit , digwrd, segwrd, Time, scanRate, tubeTC
         scanRate := refreshRate
       
       repeat until not lockset(SemID)
+      
       Time := cnt
       repeat digPos from 0 to 5                 ' Get next digit position
         digit  := byte[@DspBuff1][digPos]       ' Get char and validate

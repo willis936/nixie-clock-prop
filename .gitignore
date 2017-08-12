@@ -17,6 +17,8 @@
 /RTC
 /timezone
 /WWVB
+/spincvt
+/PCB
 
 # Windows image file caches
 Thumbs.db
