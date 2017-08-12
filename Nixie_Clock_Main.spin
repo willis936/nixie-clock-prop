@@ -88,7 +88,7 @@ CON
   '  7200: (1200 Hz 14.3% duty cycle, 0.8 ms accuracy)
   ' 11520: (1920 Hz 10.2% duty cycle, 0.5 ms accuracy)
   ' 36000: (6000 Hz  4.7% duty cycle, 0.2 ms accuracy)
-  refreshRate = 512
+  refreshRate = 2048
 
 OBJ
   RTCEngine     : "RTCEngine"
@@ -151,6 +151,9 @@ PUB main| i,c
   
   dira[HighUTCPin..LowUTCPin]~  ' Set UTC Offset dipswitch pins to input
   dira[DSTPin]~                 ' Set DST enable pin to input
+  
+  ' Adjust how many digits are shown
+  fstring.SetPrecision(4)
   
   ' Initialize 32kHz output from RTC
   RTCEngine.setStatus(%0000_1000)
@@ -363,6 +366,8 @@ PUB main| i,c
         ' If GPS is lost the PPS will never come
         ' Must wait more than one RTC second in case RTC is fast
         if phsa => RTCmax
+          ' don't display gps lock indicator if PPS isn't showing up
+          DspBuff[0] := DspBuff[0] & !dispdp
           quit
       if phsa < RTCmax
         phsa := 0
