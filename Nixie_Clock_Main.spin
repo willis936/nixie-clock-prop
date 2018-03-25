@@ -277,7 +277,7 @@ PUB main| i,c
         secs := RTCEngine.getSeconds
         
         ' Get the time, assume you just read the data for the next second
-        repeat i from 1 to 2
+        repeat i from 1 to 1
         secs += 1
         if secs > 59
           mns  += 1
