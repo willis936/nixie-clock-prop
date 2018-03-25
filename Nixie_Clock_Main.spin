@@ -88,7 +88,7 @@ CON
   '  7200: (1200 Hz 14.3% duty cycle, 0.8 ms accuracy)
   ' 11520: (1920 Hz 10.2% duty cycle, 0.5 ms accuracy)
   ' 36000: (6000 Hz  4.7% duty cycle, 0.2 ms accuracy)
-  refreshRate = 2048
+  refreshRate = 1024
 
 OBJ
   RTCEngine     : "RTCEngine"
@@ -117,6 +117,8 @@ VAR
   byte days, mons, yrs, dayofwk
   byte SemID
   byte DST, century, gpsfix
+  long poisonCount, PPSMissCount
+  long GPSLock, RTCLock, RTCWait
   
   byte   DspBuff[6]             ' 6 byte display buffer
   byte   DspBuff1[6]            ' 6 byte display buffer1
@@ -136,6 +138,11 @@ PUB main| i,c
   century     := 20   ' Assume the clock was booted in 20XX
   RTCfreq     := 32768' How many clock edges to count per second
   RTCmax      := RTCfreq+1 ' wait one RTC cycle before assuming the PPS isn't coming
+  poisonCount := 0    ' seconds counter for anti posioning routine
+  PPSMissCount:= 0    ' countdown for rechecking GPS after a PPS miss
+  GPSLock     := 0    ' keep track of whether or not to trust the GPS
+  RTCLock     := 0    ' only update from RTC every once in a while to avoid second error
+  RTCWait     := 3600 ' how long to wait between RTC updates
   SemID       := locknew
   
   dira[HVPS_ENB]~~        ' Enable high voltage
@@ -208,7 +215,15 @@ PUB main| i,c
       gpsfix := 0
     '}}
     
-    if gpsfix > 0
+    ' get rid of GPS lock if it is no longer locked
+    if PPSMissCount < 1
+      if gpsfix <= 0
+        GPSLock := 0
+    else
+      PPSMissCount -= 1
+      GPSLock := 0
+    
+    if GPSLock > 0
       ' Get the date
       yrs  := gps.n_year
       mons := gps.n_month
@@ -222,7 +237,7 @@ PUB main| i,c
       
       ' Get the time, assume you just read the data for the next second
       ' Assuming data is from one second ago, take care of time rollover
-      repeat i from 1 to 2
+      repeat i from 1 to 1
         secs += 1
         if secs > 59
           mns  += 1
@@ -232,29 +247,52 @@ PUB main| i,c
           mns  := 0
         if hrs > 23
           hrs  := 0
-        elseif i == 2
+        elseif i == 1
           
           ' Only update the date when not rolling over a day
           RTCEngine.setYear((century*100)+yrs)
           RTCEngine.setMonth(mons)
           RTCEngine.setDate(days)
           RTCEngine.setDay(dayofwk)
-      
+        
       ' update the RTC when there is a GPS fix
       RTCEngine.setHours(hrs)
       RTCEngine.setMinutes(mns)
-    else
-      ' get the date
-      yrs     := RTCEngine.getYear
-      mons    := RTCEngine.getMonth
-      days    := RTCEngine.getDate
-      dayofwk := RTCEngine.getDay
-      ' get the time
-      hrs  := RTCEngine.getHours
-      mns  := RTCEngine.getMinutes
-      secs := RTCEngine.getSeconds
       
-      repeat i from 1 to 1
+      ' reset RTC update countdown
+      RTCLock := RTCWait
+    else
+      ' decrement RTC update countdown
+      RTCLock -= 1
+      
+      if RTCLock < 1
+        ' get the date
+        yrs     := RTCEngine.getYear
+        mons    := RTCEngine.getMonth
+        days    := RTCEngine.getDate
+        dayofwk := RTCEngine.getDay
+        ' get the time
+        hrs  := RTCEngine.getHours
+        mns  := RTCEngine.getMinutes
+        secs := RTCEngine.getSeconds
+        
+        ' Get the time, assume you just read the data for the next second
+        repeat i from 1 to 2
+        secs += 1
+        if secs > 59
+          mns  += 1
+          secs := 0
+        if mns > 59
+          hrs  += 1
+          mns  := 0
+        if hrs > 23
+          hrs  := 0
+        
+        ' reset RTC update countdown
+        RTCLock := RTCWait
+      else
+        ' increment seconds
+        repeat i from 1 to 1
         secs += 1
         if secs > 59
           mns  += 1
@@ -272,7 +310,7 @@ PUB main| i,c
           if hrs == 0
             if mns == 0
               if secs == 0
-                century := century + 1
+                century += 1
                 RTCEngine.setYear((century*100)+yrs)
     
     ' update UTC offset in GPS
@@ -290,7 +328,7 @@ PUB main| i,c
     ' update DST
     if not ina[DSTPin]
       DST := isDST
-      if DST
+      if DST and (GPSLock > 1 or RTCLock == RTCWait)
         ' Calendar will be off by a day from 11pm to midnight
         hrs := (hrs+1)//24
     
@@ -321,20 +359,24 @@ PUB main| i,c
     
     ' Write seconds to display buffer, blink decimal point on GPS fix
     DspBuff[1] := (numberToBCD(secs) >> nibble) | dispdp
-    if gpsfix > 0
+    if GPSLock > 0
       DspBuff[0] := (numberToBCD(secs) & lsnibble) | dispdp
     else
       DspBuff[0] := numberToBCD(secs) & lsnibble
     
-    ' Anti poisoning (3am everyday)
-    if hrs == 3
+    ' Anti poisoning (noon everyday)
+    if hrs == 12
       if mns == 0
         flags |= flgDirect  ' Enable direct drive
           repeat i from 0 to 5
             if secs > 29
-              DspBuff[i] := numberToBCD(secs // 10)
+              DspBuff[i] := poisonCount
             else
-              DspBuff[i] := numberToBCD(secs // 10) | dispdp
+              DspBuff[i] := poisonCount | dispdp
+          if poisonCount == 9
+            poisonCount := 0
+          else
+            poisonCount += 1
       else
         flags &= !flgDirect ' Disable direct drive
     
@@ -344,7 +386,7 @@ PUB main| i,c
     '}}
     
     ' Sleep until last display refresh before checking sync
-    repeat until (phsa => RTCfreq*(refreshRate-5)/refreshRate or ina[GPS_PPS])
+    repeat until (phsa => RTCfreq*(refreshRate-6)/refreshRate or ina[GPS_PPS])
       ' Sleep in between edges or as soon as PPS goes high
       waitpne(|< RTC_32k, (|< RTC_32k) & (|< GPS_PPS), 0)
       waitpne(|< 0,       (|< RTC_32k) & (|< GPS_PPS), 0)
@@ -371,9 +413,14 @@ PUB main| i,c
           quit
       if phsa < RTCmax
         phsa := 0
+        ' trust GPS
+        GPSLock := 1
       else
         ' account for the missing part of a second
         phsa := RTCmax - RTCfreq
+        ' don't trust GPS for 10 seconds
+        GPSLock := 0
+        PPSMissCount := 10
     else
       ' Synchronize the main loop to the RTC SQW phsa counter
       repeat until phsa => RTCfreq ' Wait for square wave counter
@@ -391,7 +438,7 @@ PUB main| i,c
     ' it's close to start of second but does not
     ' delay display (1 ms to set seconds)
     ' loop after  point to display update takes < 122 us
-    if gpsfix > 0
+    if GPSLock
       RTCEngine.setSeconds(secs)
     
     if flags & flgPrint
@@ -402,7 +449,7 @@ PUB main| i,c
       term.tx(CLREOL)
       printdate
     
-    repeat until phsa => RTCfreq/4  ' Sleep for 250 ms before pulling the time
+    repeat until phsa => RTCfreq*990/1000  ' Sleep for 990 ms before pulling the time
       ' Sleep in between edges
       waitpne(|< RTC_32k, |< RTC_32k, 0)
       waitpne(|< 0,       |< RTC_32k, 0)
@@ -556,6 +603,13 @@ PRI printdate
   term.str(fstring.FloatToString(fmath.FDiv(fmath.FMul(fmath.FFloat(updatetime),fmath.FFloat(1_000_000)),fmath.FFloat(clkfreq))))
   term.str(string(" us"))
   term.tx(CLREOL)
+  
+  term.tx(LF)
+  term.str(string("RTC:  "))
+  term.dec(RTCLock)
+  term.str(string(" / "))
+  term.dec(RTCWait)
+  term.tx(CLREOL)
 
 PRI dowStr(val)
   ' Convert Day of the Week integer to string
@@ -584,7 +638,7 @@ PRI ShowDig | digPos, digit, digwrd, segwrd, Time, scanRate, tubeTC
   repeat
     if flags & isEnabled
       if flags & flgDirect
-        scanRate := 6
+        scanRate := 5
       else
         scanRate := refreshRate
       
